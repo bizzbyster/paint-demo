@@ -81,11 +81,20 @@ window.ImageLoader = class ImageLoader {
                 const viewportTime = getRelativeTime() - this.timingData.startTime;
                 const statusBadge = img.parentNode.querySelector('.status-badge');
                 
-                // Update status badge
+                // Update status badge - completely remove and re-add classes
                 if (statusBadge) {
-                    statusBadge.textContent = entry.isIntersecting ? "In Viewport" : "Out of Viewport";
-                    statusBadge.classList.toggle('in-viewport', entry.isIntersecting);
-                    statusBadge.classList.toggle('out-viewport', !entry.isIntersecting);
+                    // First remove all viewport-related classes
+                    statusBadge.classList.remove('in-viewport');
+                    statusBadge.classList.remove('out-viewport');
+                    
+                    // Then add the appropriate class and set text
+                    if (entry.isIntersecting) {
+                        statusBadge.textContent = "In Viewport";
+                        statusBadge.classList.add('in-viewport');
+                    } else {
+                        statusBadge.textContent = "Out of Viewport";
+                        statusBadge.classList.add('out-viewport');
+                    }
                 }
                 
                 // Record viewport entry time
@@ -101,8 +110,8 @@ window.ImageLoader = class ImageLoader {
                 }
             });
         }, {
-            threshold: CONFIG.observer.threshold,
-            rootMargin: CONFIG.observer.rootMargin
+            threshold: [0, 0.5],
+            rootMargin: "0px"
         });
     }
     
@@ -113,22 +122,35 @@ window.ImageLoader = class ImageLoader {
         // Get the element's bounding rectangle
         const rect = element.getBoundingClientRect();
         
-        // Check if the element is in the viewport
+        // Get viewport dimensions reliably
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+        
+        // Check if the element is at least partially in the viewport
         const isInViewport = (
-            rect.top < window.innerHeight &&
+            rect.top < viewportHeight &&
             rect.bottom > 0 &&
-            rect.left < window.innerWidth &&
+            rect.left < viewportWidth &&
             rect.right > 0
         );
         
         // Find the status badge
         const statusBadge = element.parentNode.querySelector('.status-badge');
         
-        // Update the status badge
+        // Update the status badge explicitly
         if (statusBadge) {
-            statusBadge.textContent = isInViewport ? "In Viewport" : "Out of Viewport";
-            statusBadge.classList.toggle('in-viewport', isInViewport);
-            statusBadge.classList.toggle('out-viewport', !isInViewport);
+            // First remove all viewport-related classes
+            statusBadge.classList.remove('in-viewport');
+            statusBadge.classList.remove('out-viewport');
+            
+            // Then add the appropriate class and set text
+            if (isInViewport) {
+                statusBadge.textContent = "In Viewport";
+                statusBadge.classList.add('in-viewport');
+            } else {
+                statusBadge.textContent = "Out of Viewport";
+                statusBadge.classList.add('out-viewport');
+            }
         }
         
         // Record viewport entry if in viewport
@@ -141,10 +163,12 @@ window.ImageLoader = class ImageLoader {
                 this.timingData.viewportDeltas.push({
                     imageIndex: index,
                     viewportTime: viewportTime,
-                    intersectionRatio: 1.0 // Estimated ratio since we don't have actual IntersectionObserverEntry
+                    intersectionRatio: 0.5 // Estimated partial visibility
                 });
             }
         }
+        
+        return isInViewport;
     }
     
     /**
@@ -169,7 +193,7 @@ window.ImageLoader = class ImageLoader {
                     data-index="${index}" 
                     elementtiming="product-image-${index + 1}"
                 >
-                <div class="status-badge out-viewport">Out of Viewport</div>
+                <div class="status-badge">Checking Viewport...</div>
                 <div class="product-info">
                     <h2>${product.title}</h2>
                     <p>${product.description}</p>
@@ -192,7 +216,7 @@ window.ImageLoader = class ImageLoader {
                     style="filter: blur(5px); transition: filter 0.5s ease;"
                     elementtiming="product-image-${index + 1}"
                 >
-                <div class="status-badge out-viewport">Out of Viewport</div>
+                <div class="status-badge">Checking Viewport...</div>
                 <div class="product-info">
                     <h2>${product.title}</h2>
                     <p>${product.description}</p>
