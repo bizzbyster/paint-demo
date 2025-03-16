@@ -107,6 +107,47 @@ window.ImageLoader = class ImageLoader {
     }
     
     /**
+     * Check if an element is initially in the viewport
+     */
+    checkInitialViewportStatus(element) {
+        // Get the element's bounding rectangle
+        const rect = element.getBoundingClientRect();
+        
+        // Check if the element is in the viewport
+        const isInViewport = (
+            rect.top < window.innerHeight &&
+            rect.bottom > 0 &&
+            rect.left < window.innerWidth &&
+            rect.right > 0
+        );
+        
+        // Find the status badge
+        const statusBadge = element.parentNode.querySelector('.status-badge');
+        
+        // Update the status badge
+        if (statusBadge) {
+            statusBadge.textContent = isInViewport ? "In Viewport" : "Out of Viewport";
+            statusBadge.classList.toggle('in-viewport', isInViewport);
+            statusBadge.classList.toggle('out-viewport', !isInViewport);
+        }
+        
+        // Record viewport entry if in viewport
+        if (isInViewport) {
+            const index = parseInt(element.dataset.index);
+            const viewportTime = getRelativeTime() - this.timingData.startTime;
+            
+            // Only add if not already recorded
+            if (!this.timingData.viewportDeltas.some(item => item.imageIndex === index)) {
+                this.timingData.viewportDeltas.push({
+                    imageIndex: index,
+                    viewportTime: viewportTime,
+                    intersectionRatio: 1.0 // Estimated ratio since we don't have actual IntersectionObserverEntry
+                });
+            }
+        }
+    }
+    
+    /**
      * Create HTML for a product item
      */
     createProductHTML(product, index, size, loadType) {
@@ -168,7 +209,10 @@ window.ImageLoader = class ImageLoader {
      */
     setupStandardLoadListeners() {
         document.querySelectorAll('.product-image').forEach(img => {
-            // Start observing for viewport
+            // Check if the image is initially in viewport before observing
+            this.checkInitialViewportStatus(img);
+            
+            // Start observing for viewport changes
             this.viewportObserver.observe(img);
             
             // Use an arrow function to preserve 'this' context
@@ -203,7 +247,10 @@ window.ImageLoader = class ImageLoader {
         const that = this; // Store reference to 'this' for use in callbacks
         
         document.querySelectorAll('.product-image').forEach(img => {
-            // Start observing for viewport
+            // Check if the image is initially in viewport before observing
+            this.checkInitialViewportStatus(img);
+            
+            // Start observing for viewport changes
             that.viewportObserver.observe(img);
             
             const onLowResLoad = function() {
