@@ -10,6 +10,9 @@ window.PageMetricsTracker = class PageMetricsTracker {
         };
         
         this.observers = [];
+        
+        // Track whether we've already disconnected the LCP observer
+        this.lcpDisconnected = false;
     }
     
     /**
@@ -31,6 +34,25 @@ window.PageMetricsTracker = class PageMetricsTracker {
                 this.displayMetrics();
             }, 1000);
         });
+        
+        // Make sure to detect page visibility changes to finalize LCP
+        this.setupVisibilityChangeListener();
+    }
+    
+    /**
+     * Set up listener for visibility change to properly finalize LCP
+     */
+    setupVisibilityChangeListener() {
+        // This needs to be outside any other method to ensure it's only attached once
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden' && !this.lcpDisconnected) {
+                console.log('Page hidden, finalizing LCP measurement');
+                this.lcpDisconnected = true;
+                
+                // Give a small delay to finalize LCP before displaying
+                setTimeout(() => this.displayMetrics(), 100);
+            }
+        });
     }
     
     /**
@@ -46,6 +68,9 @@ window.PageMetricsTracker = class PageMetricsTracker {
             paintTiming: {},
             webVitals: {}
         };
+        
+        // Reset LCP disconnected flag
+        this.lcpDisconnected = false;
         
         // Try to clear performance entries
         this.clearPerformanceEntries();
@@ -191,11 +216,7 @@ window.PageMetricsTracker = class PageMetricsTracker {
                 this.observers.push(lcpObserver);
                 
                 // LCP is finalized when the page's lifecycle state changes to hidden
-                document.addEventListener('visibilitychange', () => {
-                    if (document.visibilityState === 'hidden') {
-                        lcpObserver.disconnect();
-                    }
-                });
+                // Note: This is now handled in setupVisibilityChangeListener()
             } catch (e) {
                 console.warn('LCP observer not supported', e);
             }
