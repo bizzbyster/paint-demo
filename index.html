@@ -4,101 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Image Load vs Paint Timing</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 1000px;
-            margin: 0 auto;
-            padding: 20px;
-            color: #333;
-        }
-        .product-container {
-            display: flex;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        .product-item {
-            flex: 1;
-            min-width: 250px;
-            max-width: 30%;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-            border-radius: 8px;
-            overflow: hidden;
-        }
-        .product-image {
-            width: 100%;
-            height: 200px;
-            object-fit: cover;
-            display: block;
-        }
-        .product-info {
-            padding: 15px;
-        }
-        h2 {
-            margin-top: 0;
-            margin-bottom: 10px;
-            color: #2c3e50;
-        }
-        .price {
-            font-weight: bold;
-            color: #e74c3c;
-            font-size: 1.2rem;
-        }
-        #results {
-            margin-top: 30px;
-            padding: 20px;
-            background-color: #f8f9fa;
-            border-left: 4px solid #4CAF50;
-            border-radius: 4px;
-        }
-        .controls {
-            margin: 20px 0;
-            padding: 15px;
-            background-color: #eee;
-            border-radius: 5px;
-        }
-        label {
-            font-weight: bold;
-            margin-right: 10px;
-        }
-        select {
-            padding: 8px;
-            border-radius: 4px;
-            border: 1px solid #ccc;
-            margin-right: 15px;
-        }
-        button {
-            background-color: #3498db;
-            color: white;
-            border: none;
-            padding: 10px 15px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
-        }
-        th, td {
-            padding: 10px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
-        }
-        th {
-            background-color: #f2f2f2;
-        }
-        .info-section {
-            margin-top: 20px;
-            padding: 15px;
-            background-color: #f9f9f9;
-            border-radius: 5px;
-            border-left: 4px solid #2980b9;
-        }
-    </style>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <h1>Image Load vs Paint Timing Demo</h1>
@@ -119,6 +25,8 @@
         </select>
         
         <button id="reload-test">Run Test</button>
+        <button id="full-reload">Full Page Reload</button>
+        <button id="clear-cache">Clear Performance Cache</button>
     </div>
     
     <div class="product-container" id="product-container"></div>
@@ -128,526 +36,187 @@
         <p>Click "Run Test" to start...</p>
     </div>
     
+    <div id="page-metrics">
+        <h2>Page Performance Metrics</h2>
+        <div id="page-metrics-content">
+            <p>Waiting for metrics...</p>
+        </div>
+    </div>
+    
     <div class="info-section">
         <h3>Understanding Load vs. Paint Times</h3>
         <p><strong>Load Time:</strong> When the browser finishes downloading the image data and fires the JavaScript <code>load</code> event.</p>
         <p><strong>Paint Time:</strong> When the browser actually renders the image visibly on screen.</p>
+        <p><strong>InViewport:</strong> When the image enters the user's viewport (visible area of the page).</p>
         <p>These times can differ because:</p>
         <ul>
             <li>The browser might batch rendering updates for performance</li>
             <li>The browser needs to decode image data after loading</li>
             <li>Other JavaScript might be blocking the main thread</li>
             <li>Layout and style calculations need to be performed</li>
+            <li>Images might be outside the viewport when loaded</li>
         </ul>
-        <p><strong>Note:</strong> First-Contentful-Paint is a page-level metric that measures when the browser first renders any content that gives visual feedback that the page is loading. It's a single event for the entire page, not per image.</p>
         
-        <h3>Low Quality Image Placeholders (LQIP)</h3>
-        <p>When using LQIP, the browser:</p>
-        <ol>
-            <li>Loads a tiny, low-quality image first (fast to download)</li>
-            <li>Paints this low-quality image to the screen (gives immediate visual feedback)</li>
-            <li>Loads the high-quality image in the background</li>
-            <li>Replaces the low-quality image with the high-quality version when ready</li>
-        </ol>
-        <p>This creates a better perceived performance because users see something quickly, even if the final high-quality image takes longer to load.</p>
+        <h3>Page Performance Metrics</h3>
+        <p><strong>First Contentful Paint (FCP):</strong> Marks when the first text or image is painted.</p>
+        <p><strong>Largest Contentful Paint (LCP):</strong> Marks when the largest content element is painted.</p>
+        <p><strong>Time to Interactive (TTI):</strong> When the page is fully interactive.</p>
+        <p><strong>Navigation Timing API:</strong> Provides detailed timing information about the page load process.</p>
     </div>
     
+    <!-- Configuration -->
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // DOM references
-            const productContainer = document.getElementById('product-container');
-            const results = document.getElementById('results');
-            const imageSize = document.getElementById('image-size');
-            const imageType = document.getElementById('image-type');
-            const reloadButton = document.getElementById('reload-test');
+    /**
+     * Configuration constants for the image loading demo
+     */
+    const CONFIG = {
+        // Product data
+        products: [
+            {
+                title: "Premium Product One",
+                description: "High-quality product with amazing features.",
+                price: "$129.99"
+            },
+            {
+                title: "Deluxe Product Two",
+                description: "Exclusive design with premium materials.",
+                price: "$149.99"
+            },
+            {
+                title: "Ultimate Product Three",
+                description: "The best in its category, unmatched quality.",
+                price: "$199.99"
+            }
+        ],
+        
+        // Image size configuration
+        imageSizes: {
+            small: "200/150",
+            medium: "600/400",
+            large: "1200/800"
+        },
+        
+        // Low quality image size
+        lqipSize: "50/30",
+        
+        // Performance thresholds (in milliseconds)
+        performance: {
+            fcp: {
+                good: 1800,
+                poor: 3000
+            },
+            lcp: {
+                good: 2500,
+                poor: 4000
+            },
+            loadToPaint: {
+                fast: 50,
+                slow: 300
+            }
+        },
+        
+        // IntersectionObserver configuration
+        observer: {
+            threshold: 0.1,
+            rootMargin: "0px"
+        }
+    };
+    </script>
+    
+    <!-- Load the modules -->
+    <script src="metrics.js"></script>
+    <script src="imageLoader.js"></script>
+    
+    <!-- Initialize the application -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Wait slightly to ensure scripts are loaded
+        setTimeout(function() {
+            // Initialize page metrics tracking
+            if (window.PageMetricsTracker) {
+                window.pageMetricsTracker = new window.PageMetricsTracker();
+                window.pageMetricsTracker.init();
+            } else {
+                console.error("PageMetricsTracker not found! Check that metrics.js is loaded correctly.");
+            }
             
-            // Product data
-            const products = [
-                {
-                    title: "Premium Product One",
-                    description: "High-quality product with amazing features.",
-                    price: "$129.99"
-                },
-                {
-                    title: "Deluxe Product Two",
-                    description: "Exclusive design with premium materials.",
-                    price: "$149.99"
-                },
-                {
-                    title: "Ultimate Product Three",
-                    description: "The best in its category, unmatched quality.",
-                    price: "$199.99"
-                }
-            ];
-            
-            // Image size configuration
-            const imageSizes = {
-                small: "200/150",
-                medium: "600/400",
-                large: "1200/800"
-            };
-            
-            // Timings storage
-            let timingData = {
-                startTime: 0,
-                imageLoadTimes: [],
-                elementTimings: [],
-                paintDeltas: []
-            };
-            
-            // Create an image loader helper
-            function loadImages() {
-                // Clear previous content
-                productContainer.innerHTML = '';
+            // Create image loader instance
+            if (window.ImageLoader) {
+                const imageLoader = new window.ImageLoader();
                 
-                // Reset timing data
-                timingData = {
-                    startTime: performance.now(),
-                    imageLoadTimes: [],
-                    elementTimings: [],
-                    paintDeltas: []
-                };
-                
-                // Show loading message
-                results.innerHTML = '<h2>Timing Results</h2><p>Loading images...</p>';
-                
-                // Get selected size
-                const size = imageSizes[imageSize.value];
-                const loadType = imageType.value;
-                
-                // Create and append product items
-                products.forEach((product, index) => {
-                    // Create product element
-                    const productDiv = document.createElement('div');
-                    productDiv.className = 'product-item';
-                    
-                    // Create image with different approach based on selected type
-                    if (loadType === 'standard') {
-                        // Standard approach - direct load
-                        productDiv.innerHTML = `
-                            <img 
-                                src="https://picsum.photos/seed/product${index + 1}/${size}" 
-                                alt="${product.title}" 
-                                class="product-image" 
-                                data-index="${index}" 
-                                elementtiming="product-image-${index + 1}"
-                            >
-                            <div class="product-info">
-                                <h2>${product.title}</h2>
-                                <p>${product.description}</p>
-                                <div class="price">${product.price}</div>
-                            </div>
-                        `;
-                    } else {
-                        // Low quality first approach
-                        const smallSize = "50/30"; // Tiny placeholder
-                        productDiv.innerHTML = `
-                            <img 
-                                src="https://picsum.photos/seed/product${index + 1}/${smallSize}" 
-                                alt="${product.title}" 
-                                class="product-image" 
-                                data-index="${index}" 
-                                data-highres="https://picsum.photos/seed/product${index + 1}/${size}"
-                                style="filter: blur(5px); transition: filter 0.5s ease;"
-                                elementtiming="product-image-${index + 1}"
-                            >
-                            <div class="product-info">
-                                <h2>${product.title}</h2>
-                                <p>${product.description}</p>
-                                <div class="price">${product.price}</div>
-                            </div>
-                        `;
+                // Event listener for the reload button
+                const reloadButton = document.getElementById('reload-test');
+                reloadButton.addEventListener('click', () => {
+                    // Show loading indicator
+                    const resultElement = document.getElementById('results');
+                    if (resultElement) {
+                        resultElement.innerHTML = '<h2>Timing Results</h2><p>Resetting page state...</p>';
                     }
                     
-                    productContainer.appendChild(productDiv);
-                });
-                
-                // Set up load event listeners for standard images
-                if (loadType === 'standard') {
-                    document.querySelectorAll('.product-image').forEach(img => {
-                        img.addEventListener('load', function() {
-                            const loadTime = performance.now() - timingData.startTime;
-                            const index = parseInt(img.dataset.index);
-                            
-                            timingData.imageLoadTimes.push({
-                                index: index,
-                                time: loadTime
-                            });
-                            
-                            // Check if all images are loaded
-                            if (timingData.imageLoadTimes.length === products.length) {
-                                setTimeout(displayResults, 1000); // Wait a bit to ensure paint events are captured
-                            }
-                        });
-                        
-                        img.addEventListener('error', function() {
-                            console.error(`Error loading image ${img.dataset.index}`);
-                        });
-                    });
-                } else {
-                    // Set up two-phase loading for LQIP approach
-                    document.querySelectorAll('.product-image').forEach(img => {
-                        img.addEventListener('load', function onLowResLoad() {
-                            const loadTime = performance.now() - timingData.startTime;
-                            const index = parseInt(img.dataset.index);
-                            
-                            // Track low-res load
-                            timingData.imageLoadTimes.push({
-                                index: index,
-                                time: loadTime,
-                                type: 'low-res'
-                            });
-                            
-                            // Also track low-res paint time
-                            requestAnimationFrame(() => {
-                                const lowResPaintTime = performance.now() - timingData.startTime;
-                                timingData.paintDeltas.push({
-                                    imageIndex: index,
-                                    loadTime: loadTime,
-                                    paintTime: lowResPaintTime,
-                                    delta: lowResPaintTime - loadTime,
-                                    method: 'requestAnimationFrame',
-                                    type: 'low-res'
-                                });
-                            });
-                            
-                            // Remove listener to avoid triggering again for high-res
-                            img.removeEventListener('load', onLowResLoad);
-                            
-                            // Now load high-res version
-                            setTimeout(() => {
-                                const highResImage = new Image();
-                                
-                                highResImage.onload = function() {
-                                    const highResLoadTime = performance.now() - timingData.startTime;
-                                    
-                                    // Update the image
-                                    img.src = highResImage.src;
-                                    img.style.filter = 'blur(0)';
-                                    
-                                    // Track high-res load
-                                    timingData.imageLoadTimes.push({
-                                        index: index,
-                                        time: highResLoadTime,
-                                        type: 'high-res'
-                                    });
-                                    
-                                    // Track high-res paint time
-                                    requestAnimationFrame(() => {
-                                        const highResPaintTime = performance.now() - timingData.startTime;
-                                        timingData.paintDeltas.push({
-                                            imageIndex: index,
-                                            loadTime: highResLoadTime,
-                                            paintTime: highResPaintTime,
-                                            delta: highResPaintTime - highResLoadTime,
-                                            method: 'requestAnimationFrame',
-                                            type: 'high-res'
-                                        });
-                                    });
-                                    
-                                    // Check if all high-res images are loaded
-                                    const highResLoads = timingData.imageLoadTimes.filter(item => item.type === 'high-res');
-                                    if (highResLoads.length === products.length) {
-                                        setTimeout(displayResults, 1000); // Wait a bit to ensure paint events are captured
-                                    }
-                                };
-                                
-                                highResImage.src = img.dataset.highres;
-                            }, 500); // Small delay before loading high-res
-                        });
-                        
-                        img.addEventListener('error', function() {
-                            console.error(`Error loading image ${img.dataset.index}`);
-                        });
-                    });
-                }
-                
-                // Set up Performance Observer for paint events
-                if ('PerformanceObserver' in window) {
-                    try {
-                        // Observe paint timing events
-                        const paintObserver = new PerformanceObserver((entryList) => {
-                            for (const entry of entryList.getEntries()) {
-                                console.log(`Paint event: ${entry.name} at ${entry.startTime}ms`);
-                            }
-                        });
-                        paintObserver.observe({ entryTypes: ['paint'] });
-                        
-                        // Observe element timing for images
-                        const elementObserver = new PerformanceObserver((entryList) => {
-                            for (const entry of entryList.getEntries()) {
-                                console.log(`Element timing: ${entry.identifier} at ${entry.startTime}ms`);
-                                
-                                // Store element timing data
-                                timingData.elementTimings.push({
-                                    identifier: entry.identifier,
-                                    time: entry.startTime,
-                                    renderTime: entry.renderTime || entry.startTime
-                                });
-                                
-                                // Match with load time to calculate delta
-                                if (entry.identifier && entry.identifier.startsWith('product-image-')) {
-                                    const imageIndex = parseInt(entry.identifier.split('-').pop()) - 1;
-                                    
-                                    // Find the matching load time entry based on image type
-                                    let loadEntry;
-                                    if (imageType.value === 'standard') {
-                                        loadEntry = timingData.imageLoadTimes.find(item => item.index === imageIndex);
-                                    } else {
-                                        // For LQIP, use the high-res timing
-                                        loadEntry = timingData.imageLoadTimes.find(
-                                            item => item.index === imageIndex && item.type === 'high-res'
-                                        );
-                                    }
-                                    
-                                    if (loadEntry) {
-                                        const paintTime = entry.renderTime || entry.startTime;
-                                        const loadTime = loadEntry.time;
-                                        const delta = paintTime - loadTime;
-                                        
-                                        timingData.paintDeltas.push({
-                                            imageIndex: imageIndex,
-                                            loadTime: loadTime,
-                                            paintTime: paintTime,
-                                            delta: delta
-                                        });
-                                    }
-                                }
-                            }
-                        });
-                        elementObserver.observe({ entryTypes: ['element'] });
-                    } catch (e) {
-                        console.warn('Performance observer not fully supported', e);
-                    }
-                }
-                
-                // Backup method to detect paint times using requestAnimationFrame
-                document.querySelectorAll('.product-image').forEach(img => {
-                    // Store original dimensions (likely 0x0 until image loads and paints)
-                    const originalWidth = img.offsetWidth;
-                    const originalHeight = img.offsetHeight;
-                    const index = parseInt(img.dataset.index);
-                    let paintDetected = false;
-                    
-                    function checkPaint() {
-                        // If dimensions changed, the image has likely been painted
-                        if (!paintDetected && (img.offsetWidth !== originalWidth || img.offsetHeight !== originalHeight || img.naturalWidth > 0)) {
-                            const paintTime = performance.now() - timingData.startTime;
-                            paintDetected = true;
-                            
-                            // Find corresponding load entry
-                            let loadEntry;
-                            if (imageType.value === 'standard') {
-                                loadEntry = timingData.imageLoadTimes.find(item => item.index === index);
-                            } else {
-                                // For LQIP, use high-res timing if available
-                                loadEntry = timingData.imageLoadTimes.find(
-                                    item => item.index === index && (item.type === 'high-res' || !item.type)
-                                );
-                            }
-                            
-                            if (loadEntry) {
-                                const loadTime = loadEntry.time;
-                                const delta = paintTime - loadTime;
-                                
-                                // Store paint time if not already recorded via Element Timing API
-                                const existingDelta = timingData.paintDeltas.find(
-                                    item => item.imageIndex === index
-                                );
-                                
-                                if (!existingDelta) {
-                                    timingData.paintDeltas.push({
-                                        imageIndex: index,
-                                        loadTime: loadTime,
-                                        paintTime: paintTime,
-                                        delta: delta,
-                                        method: 'requestAnimationFrame'
-                                    });
-                                }
-                            }
-                            
-                            return;
-                        }
-                        
-                        // Keep checking until paint is detected or timeout
-                        if (!paintDetected && performance.now() - timingData.startTime < 10000) {
-                            requestAnimationFrame(checkPaint);
-                        }
-                    }
-                    
-                    // Start monitoring after a small delay (to allow initial render)
+                    // First, force any pending events to complete
                     setTimeout(() => {
-                        requestAnimationFrame(checkPaint);
-                    }, 50);
+                        // Reset metrics for a new test with a more thorough approach
+                        if (window.pageMetricsTracker) {
+                            window.pageMetricsTracker.reset();
+                        }
+                        
+                        // Load images with current settings - will do a deeper reset
+                        imageLoader.loadImages();
+                    }, 100);
                 });
-            }
-            
-            // Display the timing results
-            function displayResults() {
-                // Create results HTML
-                let resultsHTML = `
-                    <h2>Timing Results</h2>
-                    <p>Image size: <strong>${imageSize.value}</strong></p>
-                    <p>Loading type: <strong>${imageType.value}</strong></p>
-                `;
                 
-                // Add load times table
-                resultsHTML += `
-                    <h3>Image Load Times (JavaScript load event)</h3>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Image</th>
-                                <th>Load Time (ms)</th>
-                                ${imageType.value === 'lowquality' ? '<th>Phase</th>' : ''}
-                            </tr>
-                        </thead>
-                        <tbody>
-                `;
+                // Event listener for the full reload button
+                const fullReloadButton = document.getElementById('full-reload');
+                if (fullReloadButton) {
+                    fullReloadButton.addEventListener('click', () => {
+                        // Store current settings in session storage to preserve them
+                        sessionStorage.setItem('savedImageSize', imageLoader.imageSize.value || 'medium');
+                        sessionStorage.setItem('savedImageType', imageLoader.imageType.value || 'standard');
+                        
+                        // Force a complete page reload, bypassing the cache
+                        window.location.reload(true);
+                    });
+                }
                 
-                // Sort by index and add rows
-                const sortedLoadTimes = [...timingData.imageLoadTimes].sort((a, b) => {
-                    if (imageType.value === 'lowquality') {
-                        // Sort by index first, then by phase (low-res before high-res)
-                        if (a.index !== b.index) return a.index - b.index;
-                        return a.type === 'low-res' ? -1 : 1;
+                // Event listener for the clear cache button
+                const clearCacheButton = document.getElementById('clear-cache');
+                clearCacheButton.addEventListener('click', () => {
+                    // Clear performance entries if browser supports it
+                    if (window.pageMetricsTracker && typeof window.pageMetricsTracker.clearPerformanceEntries === 'function') {
+                        window.pageMetricsTracker.clearPerformanceEntries();
                     }
-                    return a.index - b.index;
+                    
+                    // Reset metrics tracker
+                    if (window.pageMetricsTracker && typeof window.pageMetricsTracker.reset === 'function') {
+                        window.pageMetricsTracker.reset();
+                    }
+                    
+                    alert('Performance cache cleared! Run a new test to see updated metrics.');
                 });
                 
-                sortedLoadTimes.forEach(item => {
-                    resultsHTML += `
-                        <tr>
-                            <td>Product Image ${item.index + 1}</td>
-                            <td>${item.time.toFixed(2)}</td>
-                            ${imageType.value === 'lowquality' ? `<td>${item.type}</td>` : ''}
-                        </tr>
-                    `;
-                });
+                // Check for saved settings from previous session
+                const savedSize = sessionStorage.getItem('savedImageSize');
+                const savedType = sessionStorage.getItem('savedImageType');
                 
-                resultsHTML += `
-                        </tbody>
-                    </table>
-                `;
-                
-                // Add paint times table
-                if (timingData.paintDeltas.length > 0) {
-                    resultsHTML += `
-                        <h3>Image Paint Times (When visible on screen)</h3>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Image</th>
-                                    <th>Resolution</th>
-                                    <th>Paint Time (ms)</th>
-                                    <th>Detection Method</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                    `;
-                    
-                    // Sort by image index, then by type (low-res first)
-                    timingData.paintDeltas
-                        .sort((a, b) => {
-                            if (a.imageIndex !== b.imageIndex) return a.imageIndex - b.imageIndex;
-                            return (a.type === 'low-res' ? -1 : 1);
-                        })
-                        .forEach(item => {
-                            resultsHTML += `
-                                <tr>
-                                    <td>Product Image ${item.imageIndex + 1}</td>
-                                    <td>${item.type || 'standard'}</td>
-                                    <td>${item.paintTime.toFixed(2)}</td>
-                                    <td>${item.method || 'API'}</td>
-                                </tr>
-                            `;
-                        });
-                    
-                    resultsHTML += `
-                            </tbody>
-                        </table>
-                    `;
+                if (savedSize && document.getElementById('image-size')) {
+                    document.getElementById('image-size').value = savedSize;
                 }
                 
-                // Add load vs paint comparison if available
-                if (timingData.paintDeltas.length > 0) {
-                    resultsHTML += `
-                        <h3>Load vs. Paint Comparison</h3>
-                        <p>This shows the difference between when an image finishes loading (JavaScript load event) and when it's actually painted to the screen:</p>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Image</th>
-                                    <th>Resolution</th>
-                                    <th>Load Time (ms)</th>
-                                    <th>Paint Time (ms)</th>
-                                    <th>Delta (ms)</th>
-                                    <th>Notes</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                    `;
-                    
-                    // Sort paint deltas by image index, then by type (low-res first)
-                    timingData.paintDeltas
-                        .sort((a, b) => {
-                            if (a.imageIndex !== b.imageIndex) return a.imageIndex - b.imageIndex;
-                            return (a.type === 'low-res' ? -1 : 1);
-                        })
-                        .forEach(delta => {
-                            let notes = "";
-                            if (delta.method === 'estimated') {
-                                notes = "Estimated paint time (API not available)";
-                            } else if (delta.delta <= 0) {
-                                notes = "Paint reported before load (browser optimization or cached image)";
-                            } else if (delta.delta < 10) {
-                                notes = "Paint happened almost immediately after load";
-                            } else if (delta.delta > 50) {
-                                notes = "Significant delay between load and paint";
-                            }
-                            
-                            // Add visual improvement for LQIP
-                            if (delta.type === 'low-res') {
-                                const highResItem = timingData.imageLoadTimes.find(
-                                    item => item.index === delta.imageIndex && item.type === 'high-res'
-                                );
-                                
-                                if (highResItem) {
-                                    const timeAdvantage = highResItem.time - delta.paintTime;
-                                    if (timeAdvantage > 0) {
-                                        notes += ` User sees content ${timeAdvantage.toFixed(0)}ms earlier with LQIP.`;
-                                    }
-                                }
-                            }
-                            
-                            resultsHTML += `
-                                <tr>
-                                    <td>Product Image ${delta.imageIndex + 1}</td>
-                                    <td>${delta.type || 'standard'}</td>
-                                    <td>${delta.loadTime.toFixed(2)}</td>
-                                    <td>${delta.paintTime.toFixed(2)}</td>
-                                    <td><strong>${delta.delta.toFixed(2)}</strong></td>
-                                    <td>${notes}</td>
-                                </tr>
-                            `;
-                        });
-                    
-                    resultsHTML += `
-                            </tbody>
-                        </table>
-                    `;
+                if (savedType && document.getElementById('image-type')) {
+                    document.getElementById('image-type').value = savedType;
                 }
                 
-                // Update the results element
-                results.innerHTML = resultsHTML;
+                // Clear saved settings now that we've used them
+                sessionStorage.removeItem('savedImageSize');
+                sessionStorage.removeItem('savedImageType');
+                
+                // Initial load
+                imageLoader.loadImages();
+            } else {
+                console.error("ImageLoader not found! Check that imageLoader.js is loaded correctly.");
             }
-            
-            // Event listener for the reload button
-            reloadButton.addEventListener('click', loadImages);
-            
-            // Initial load
-            loadImages();
-        });
+        }, 300); // Increased delay to ensure scripts are fully loaded
+    });
     </script>
 </body>
 </html>
