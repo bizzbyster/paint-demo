@@ -24,9 +24,7 @@
             <option value="lowquality">Low Quality First</option>
         </select>
         
-        <button id="reload-test">Run Test</button>
-        <button id="full-reload">Full Page Reload</button>
-        <button id="clear-cache">Clear Performance Cache</button>
+        <button id="run-test">Run Test</button>
     </div>
     
     <div class="product-container" id="product-container"></div>
@@ -144,55 +142,21 @@
             if (window.ImageLoader) {
                 const imageLoader = new window.ImageLoader();
                 
-                // Event listener for the reload button
-                const reloadButton = document.getElementById('reload-test');
-                reloadButton.addEventListener('click', () => {
-                    // Show loading indicator
-                    const resultElement = document.getElementById('results');
-                    if (resultElement) {
-                        resultElement.innerHTML = '<h2>Timing Results</h2><p>Resetting page state...</p>';
-                    }
-                    
-                    // First, force any pending events to complete
-                    setTimeout(() => {
-                        // Reset metrics for a new test with a more thorough approach
-                        if (window.pageMetricsTracker) {
-                            window.pageMetricsTracker.reset();
-                        }
-                        
-                        // Load images with current settings - will do a deeper reset
-                        imageLoader.loadImages();
-                    }, 100);
-                });
-                
-                // Event listener for the full reload button
-                const fullReloadButton = document.getElementById('full-reload');
-                if (fullReloadButton) {
-                    fullReloadButton.addEventListener('click', () => {
+                // Event listener for the consolidated test button
+                const runTestButton = document.getElementById('run-test');
+                if (runTestButton) {
+                    runTestButton.addEventListener('click', () => {
                         // Store current settings in session storage to preserve them
-                        sessionStorage.setItem('savedImageSize', imageLoader.imageSize.value || 'medium');
-                        sessionStorage.setItem('savedImageType', imageLoader.imageType.value || 'standard');
+                        const imageSize = document.getElementById('image-size').value || 'medium';
+                        const imageType = document.getElementById('image-type').value || 'standard';
+                        
+                        sessionStorage.setItem('savedImageSize', imageSize);
+                        sessionStorage.setItem('savedImageType', imageType);
                         
                         // Force a complete page reload, bypassing the cache
                         window.location.reload(true);
                     });
                 }
-                
-                // Event listener for the clear cache button
-                const clearCacheButton = document.getElementById('clear-cache');
-                clearCacheButton.addEventListener('click', () => {
-                    // Clear performance entries if browser supports it
-                    if (window.pageMetricsTracker && typeof window.pageMetricsTracker.clearPerformanceEntries === 'function') {
-                        window.pageMetricsTracker.clearPerformanceEntries();
-                    }
-                    
-                    // Reset metrics tracker
-                    if (window.pageMetricsTracker && typeof window.pageMetricsTracker.reset === 'function') {
-                        window.pageMetricsTracker.reset();
-                    }
-                    
-                    alert('Performance cache cleared! Run a new test to see updated metrics.');
-                });
                 
                 // Check for saved settings from previous session
                 const savedSize = sessionStorage.getItem('savedImageSize');
@@ -215,7 +179,7 @@
             } else {
                 console.error("ImageLoader not found! Check that imageLoader.js is loaded correctly.");
             }
-        }, 300); // Increased delay to ensure scripts are fully loaded
+        }, 300); // Delay to ensure scripts are fully loaded
     });
     </script>
 </body>
