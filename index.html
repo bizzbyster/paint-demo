@@ -208,9 +208,9 @@ isInViewport = (
         }, 300); // Delay to ensure scripts are fully loaded
     });
     
-    /**
+/**
      * Safari LCP Polyfill
-     * This provides basic LCP functionality for browsers that don't support it natively
+     * This provides more accurate LCP functionality for browsers that don't support it natively
      */
     function initSafariLCPPolyfill() {
         // Check if we need a polyfill (Safari)
@@ -228,66 +228,121 @@ isInViewport = (
             })());
         
         if (needsPolyfill) {
-            console.log('Safari detected! Initializing LCP polyfill');
+            console.log('Safari detected! Initializing improved LCP polyfill');
             
             // Store the largest element seen so far
             let largestElement = null;
             let largestSize = 0;
             
-            // Function to check if an element is larger than the current largest
-            function checkElementSize(element) {
-                if (!element) return;
+            // Function to check if an element is potentially the LCP
+            function checkForLargestElement() {
+                // Prioritize checking product images first
+                const productImgs = Array.from(document.querySelectorAll('.product-image'));
+                const otherCandidates = [
+                    ...Array.from(document.querySelectorAll('img:not(.product-image)')),
+                    ...Array.from(document.querySelectorAll('h1')),
+                    ...Array.from(document.querySelectorAll('video')),
+                    ...Array.from(document.querySelectorAll('.product-item'))
+                ];
                 
-                const rect = element.getBoundingClientRect();
-                const size = rect.width * rect.height;
+                // Combine all candidates with product images first
+                const candidates = [...productImgs, ...otherCandidates];
                 
-                if (size > largestSize) {
-                    largestSize = size;
-                    largestElement = element;
+                candidates.forEach(el => {
+                    if (!el.isConnected) return;
                     
-                    // Update LCP data
-                    if (window.pageMetricsTracker && window.pageMetricsTracker.metrics) {
+                    // For images, only consider if they're loaded
+                    if (el.tagName === 'IMG' && (!el.complete || !el.naturalWidth)) {
+                        return;
+                    }
+                    
+                    // Get element dimensions
+                    const rect = el.getBoundingClientRect();
+                    const area = rect.width * rect.height;
+                    
+                    // Check if it's in viewport
+                    const isInViewport = (
+                        rect.top < window.innerHeight &&
+                        rect.bottom > 0 &&
+                        rect.left < window.innerWidth &&
+                        rect.right > 0
+                    );
+                    
+                    // Give product images a slight priority by multiplying their size
+                    // This helps ensure we choose images over text when they're truly larger
+                    const adjustedArea = el.classList.contains('product-image') ? area * 1.1 : area;
+                    
+                    // Only track elements that are in viewport and visible
+                    if (isInViewport && adjustedArea > largestSize) {
+                        largestSize = adjustedArea;
+                        largestElement = el;
+                        
+                        // Record as potential LCP if not already set
+                        if (!window.pageMetricsTracker || !window.pageMetricsTracker.metrics) return;
+                        
+                        const now = performance.now();
                         window.pageMetricsTracker.metrics.webVitals.lcp = {
-                            value: performance.now(),
-                            element: element.tagName,
-                            elementId: element.id,
-                            elementClass: element.className,
-                            size: size,
-                            renderTime: performance.now(),
-                            rating: window.pageMetricsTracker.getRating(performance.now(), CONFIG.performance.lcp),
-                            method: 'safari-polyfill'
+                            value: now,
+                            element: el.tagName,
+                            elementId: el.id,
+                            elementClass: el.className,
+                            size: area, // Store actual size, not the adjusted one
+                            renderTime: now,
+                            rating: window.pageMetricsTracker.getRating(now, CONFIG.performance.lcp),
+                            method: 'safari-improved-fallback',
+                            url: el.tagName === 'IMG' ? el.src : null
                         };
+                        
+                        console.log('Improved Safari LCP fallback detected element:', {
+                            element: el.tagName,
+                            class: el.className,
+                            size: area,
+                            adjustedSize: adjustedArea,
+                            isProduct: el.classList.contains('product-image')
+                        });
                         
                         window.pageMetricsTracker.displayMetrics();
                     }
-                }
+                });
             }
             
-            // Monitor image loads
-            window.addEventListener('load', () => {
-                // Check all images after page load
-                setTimeout(() => {
-                    document.querySelectorAll('img').forEach(img => {
-                        if (img.complete) {
-                            checkElementSize(img);
-                        }
-                    });
-                    
-                    // Also check large text elements
-                    document.querySelectorAll('h1, h2, .product-info').forEach(el => {
-                        checkElementSize(el);
-                    });
-                    
-                    console.log('Safari LCP polyfill: largest element', largestElement);
-                }, 500);
+            // Check more frequently and for a longer duration
+            let checkCount = 0;
+            const maxChecks = 8; // More checks to catch late-loading content
+            
+            // Initial check
+            if (document.readyState === 'complete' || document.readyState === 'interactive') {
+                setTimeout(checkForLargestElement, 100);
+            }
+            
+            // Check after DOM is ready
+            document.addEventListener('DOMContentLoaded', () => {
+                setTimeout(checkForLargestElement, 200);
             });
             
-            // Listen for image load events
+            // More thorough check after images load
+            window.addEventListener('load', () => {
+                setTimeout(checkForLargestElement, 300);
+                setTimeout(checkForLargestElement, 800);
+            });
+            
+            // Listen for image loads to update LCP
             document.addEventListener('load', (event) => {
                 if (event.target.tagName === 'IMG') {
-                    checkElementSize(event.target);
+                    // Wait a bit to ensure the image is painted
+                    setTimeout(checkForLargestElement, 100);
                 }
             }, true);
+            
+            // Set up a periodic check to catch late-loading content
+            const checkInterval = setInterval(() => {
+                checkForLargestElement();
+                checkCount++;
+                
+                if (checkCount >= maxChecks) {
+                    clearInterval(checkInterval);
+                }
+            }, 500); // Check more frequently
         }
     }
     </script>
