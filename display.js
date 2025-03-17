@@ -342,49 +342,77 @@ window.DisplayManager = class DisplayManager {
     /**
      * Generate HTML for the Large Contentful Set (LCS) table
      */
-    generateLCSTableHTML() {
-        // Sort elements by size (largest first)
-        const sortedElements = [...this.lcsData.elements].sort((a, b) => b.area - a.area);
+
+generateLCSTableHTML() {
+    // Sort elements by size (largest first)
+    const sortedElements = [...this.lcsData.elements].sort((a, b) => b.area - a.area);
+    
+    // Get largest element size for percentage calculation
+    const largestSize = sortedElements.length > 0 ? sortedElements[0].area : 0;
+    
+    // Generate rows
+    const rows = sortedElements.map(item => {
+        const element = item.element;
+        const percentage = ((item.area / largestSize) * 100).toFixed(1);
+        const elementInfo = this.formatElementInfo(element);
         
-        // Get largest element size for percentage calculation
-        const largestSize = sortedElements.length > 0 ? sortedElements[0].area : 0;
-        
-        // Generate rows
-        const rows = sortedElements.map(item => {
-            const element = item.element;
-            const percentage = ((item.area / largestSize) * 100).toFixed(1);
-            const elementInfo = this.formatElementInfo(element);
-            
-            return `
-                <tr>
-                    <td>${elementInfo}</td>
-                    <td>${item.area}</td>
-                    <td>${item.paintEvent.time.toFixed(2)}</td>
-                    <td>${percentage}%</td>
-                </tr>
-            `;
-        }).join('');
-        
-        // Create the full table HTML
         return `
-            <h3>Large Contentful Set (LCS) Analysis</h3>
-            <p>This shows the set of large elements that are at least ${Math.round(this.lcsData.threshold * 100)}% of the largest element's size:</p>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Element</th>
-                        <th>Size (pixels)</th>
-                        <th>Paint Time (ms)</th>
-                        <th>% of Largest</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rows}
-                </tbody>
-            </table>
-            <p><strong>LCS Completion Time:</strong> ${this.lcsData.lastPaintTime.toFixed(2)}ms - when all large elements finished painting</p>
+            <tr>
+                <td>${elementInfo}</td>
+                <td>${item.area}</td>
+                <td>${item.paintEvent.time.toFixed(2)}</td>
+                <td>${percentage}%</td>
+            </tr>
         `;
+    }).join('');
+    
+    // Create the full table HTML
+    return `
+        <h3>Large Contentful Set (LCS) Analysis</h3>
+        <p>This shows the set of large elements that are at least ${Math.round(this.lcsData.threshold * 100)}% of the largest element's size:</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Element</th>
+                    <th>Size (pixels)</th>
+                    <th>Paint Time (ms)</th>
+                    <th>% of Largest</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rows}
+            </tbody>
+        </table>
+        <p><strong>LCS Completion Time:</strong> ${this.lcsData.lastPaintTime.toFixed(2)}ms - when all large elements finished painting</p>
+        <p><strong>Selected Nodes:</strong> ${this.formatSelectedNodesInfo(sortedElements)}</p>
+    `;
+}
+
+formatElementInfo(element) {
+    let info = element.tagName;
+    
+    if (element.id) {
+        info += `#${element.id}`;
     }
+    
+    if (element.className) {
+        info += `.${element.className.split(' ').join('.')}`;
+    }
+    
+    if (element.src) {
+        info += ` (src: ${element.src.split('/').pop()})`;
+    }
+    
+    return info;
+}
+
+formatSelectedNodesInfo(elements) {
+    return elements.map(item => {
+        const element = item.element;
+        return `${this.formatElementInfo(element)} (${item.area} px)`;
+    }).join(', ');
+}
+
     
     /**
      * Format element information for display

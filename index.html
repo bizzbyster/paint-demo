@@ -645,79 +645,109 @@ isInViewport = (
         }
         
         // Update Large Contentful Set (LCS)
-        function updateLCS(element, paintEvent) {
-            const area = paintEvent.area;
-            
-            // If no elements or empty set, initialize with this element
-            if (window.metrics.lcs.elements.length === 0) {
-                window.metrics.lcs.elements.push({
-                    element: element,
-                    paintEvent: paintEvent,
-                    area: area
-                });
-                window.metrics.lcs.lastPaintTime = paintEvent.time;
-                return;
-            }
-            
-            // Get current largest element area
-            const largestArea = Math.max(...window.metrics.lcs.elements.map(item => item.area));
-            
-            // Calculate threshold area based on largest element
-            const thresholdArea = largestArea * window.metrics.lcs.threshold;
-            
-            // Check if this element is large enough to be included in the set
-            if (area >= thresholdArea) {
-                // Check if this element is already in the set
-                const existingIndex = window.metrics.lcs.elements.findIndex(item => 
-                    item.element.tagName === element.tagName &&
-                    item.element.className === element.className &&
-                    item.element.id === element.id &&
-                    item.element.dataset.index === element.dataset.index
-                );
-                
-                if (existingIndex >= 0) {
-                    // Update existing element data
-                    window.metrics.lcs.elements[existingIndex] = {
-                        element: element,
-                        paintEvent: paintEvent,
-                        area: area
-                    };
-                } else {
-                    // Add new element to set
-                    window.metrics.lcs.elements.push({
-                        element: element,
-                        paintEvent: paintEvent,
-                        area: area
-                    });
-                }
-                
-                // Update the last paint time if this is later
-                if (paintEvent.time > window.metrics.lcs.lastPaintTime) {
-                    window.metrics.lcs.lastPaintTime = paintEvent.time;
-                }
-                
-                console.log(`Updated LCS: Now ${window.metrics.lcs.elements.length} elements, last paint at ${window.metrics.lcs.lastPaintTime.toFixed(2)}ms`);
-            }
-            
-            // If this is a larger element, we need to recalculate the set
-            if (area > largestArea) {
-                // Recalculate threshold based on new largest
-                const newThreshold = area * window.metrics.lcs.threshold;
-                
-                // Filter out elements that no longer meet the threshold
-                window.metrics.lcs.elements = window.metrics.lcs.elements.filter(item => item.area >= newThreshold);
-                
-                // Recalculate last paint time
-                if (window.metrics.lcs.elements.length > 0) {
-                    window.metrics.lcs.lastPaintTime = Math.max(...window.metrics.lcs.elements.map(item => item.paintEvent.time));
-                }
-            }
-            
-            // Trigger display update
-            if (window.displayManager && window.displayManager.updateLCSData) {
-                window.displayManager.updateLCSData(window.metrics.lcs);
-            }
+
+
+// Helper function to find the largest image within an element
+function findLargestImageWithin(element) {
+    if (element.tagName === 'IMG') {
+        return element;
+    }
+    
+    const images = element.querySelectorAll('img');
+    let largestImage = null;
+    let largestArea = 0;
+    
+    images.forEach(img => {
+        const area = img.offsetWidth * img.offsetHeight;
+        if (area > largestArea) {
+            largestArea = area;
+            largestImage = img;
         }
+    });
+    
+    return largestImage;
+}
+
+function updateLCS(element, paintEvent) {
+    let area = paintEvent.area;
+    let effectiveElement = element;
+    
+    // Check if the element contains an image and use it instead
+    const largestImage = findLargestImageWithin(element);
+    if (largestImage) {
+        effectiveElement = largestImage;
+        area = largestImage.offsetWidth * largestImage.offsetHeight;
+    }
+    
+    // If no elements or empty set, initialize with this element
+    if (window.metrics.lcs.elements.length === 0) {
+        window.metrics.lcs.elements.push({
+            element: effectiveElement,
+            paintEvent: paintEvent,
+            area: area
+        });
+        window.metrics.lcs.lastPaintTime = paintEvent.time;
+        return;
+    }
+    
+    // Get current largest element area
+    const largestArea = Math.max(...window.metrics.lcs.elements.map(item => item.area));
+    
+    // Calculate threshold area based on largest element
+    const thresholdArea = largestArea * window.metrics.lcs.threshold;
+    
+    // Check if this element is large enough to be included in the set
+    if (area >= thresholdArea) {
+        // Check if this element is already in the set
+        const existingIndex = window.metrics.lcs.elements.findIndex(item => 
+            item.element === effectiveElement
+        );
+        
+        if (existingIndex >= 0) {
+            // Update existing element data
+            window.metrics.lcs.elements[existingIndex] = {
+                element: effectiveElement,
+                paintEvent: paintEvent,
+                area: area
+            };
+        } else {
+            // Add new element to set
+            window.metrics.lcs.elements.push({
+                element: effectiveElement,
+                paintEvent: paintEvent,
+                area: area
+            });
+        }
+        
+        // Update the last paint time if this is later
+        if (paintEvent.time > window.metrics.lcs.lastPaintTime) {
+            window.metrics.lcs.lastPaintTime = paintEvent.time;
+        }
+        
+        console.log(`Updated LCS: Now ${window.metrics.lcs.elements.length} elements, last paint at ${window.metrics.lcs.lastPaintTime.toFixed(2)}ms`);
+    }
+    
+    // If this is a larger element, we need to recalculate the set
+    if (area > largestArea) {
+        // Recalculate threshold based on new largest
+        const newThreshold = area * window.metrics.lcs.threshold;
+        
+        // Filter out elements that no longer meet the threshold
+        window.metrics.lcs.elements = window.metrics.lcs.elements.filter(item => item.area >= newThreshold);
+        
+        // Recalculate last paint time
+        if (window.metrics.lcs.elements.length > 0) {
+            window.metrics.lcs.lastPaintTime = Math.max(...window.metrics.lcs.elements.map(item => item.paintEvent.time));
+        }
+    }
+    
+    // Trigger display update
+    if (window.displayManager && window.displayManager.updateLCSData) {
+        window.displayManager.updateLCSData(window.metrics.lcs);
+    }
+}
+
+
         
         // Initialize native LCP detection if available
         function initNativeLCPDetection() {

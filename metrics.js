@@ -1,3 +1,4 @@
+
 /**
  * Page metrics tracking module with navigation-aligned timing
  */
@@ -265,70 +266,7 @@ window.PageMetricsTracker = class PageMetricsTracker {
         let largestElement = null;
         let largestSize = 0;
         
-        // Function to check if an element is potentially the LCP
-        const checkForLargestElement = () => {
-            // Check large visible elements - common LCP candidates
-            const candidates = [
-                ...Array.from(document.querySelectorAll('img')),
-                ...Array.from(document.querySelectorAll('.product-image')),
-                ...Array.from(document.querySelectorAll('h1')),
-                ...Array.from(document.querySelectorAll('video')),
-                ...Array.from(document.querySelectorAll('.product-item')),
-            ];
-            
-            candidates.forEach(el => {
-                if (!el.isConnected) return;
-                
-                // Get element dimensions
-                const rect = el.getBoundingClientRect();
-                const area = rect.width * rect.height;
-                
-                // Check if it's in viewport
-                const isInViewport = (
-                    rect.top < window.innerHeight &&
-                    rect.bottom > 0 &&
-                    rect.left < window.innerWidth &&
-                    rect.right > 0
-                );
-                
-                // For images, only consider if they're loaded
-                if (el.tagName === 'IMG' && (!el.complete || !el.naturalWidth)) {
-                    return;
-                }
-                
-                // Only track elements that are in viewport and visible
-                if (isInViewport && area > largestSize) {
-                    largestSize = area;
-                    largestElement = el;
-                    
-                    // Record as potential LCP if not already set
-                    if (!this.metrics.webVitals.lcp || this.metrics.webVitals.lcp.element === 'unknown') {
-                        const now = performance.now();
-                        this.metrics.webVitals.lcp = {
-                            value: now,
-                            element: el.tagName,
-                            elementId: el.id,
-                            elementClass: el.className,
-                            size: area,
-                            renderTime: now,
-                            rating: this.getRating(now, CONFIG.performance.lcp),
-                            method: 'fallback'
-                        };
-                        
-                        // Also store in window.metrics for comparison if available
-                        if (window.metrics) {
-                            window.metrics.nativeLCP = { 
-                                ...this.metrics.webVitals.lcp,
-                                method: 'fallback'
-                            };
-                        }
-                        
-                        console.log('Fallback LCP detected:', this.metrics.webVitals.lcp);
-                        this.displayMetrics();
-                    }
-                }
-            });
-        };
+        const checkForLargestElement = this.checkForLargestElement.bind(this);
         
         // Check for largest element once DOM is interactive
         if (document.readyState === 'complete' || document.readyState === 'interactive') {
@@ -362,6 +300,108 @@ window.PageMetricsTracker = class PageMetricsTracker {
                 clearInterval(checkInterval);
             }
         }, 1000);
+    }
+
+    /**
+     * Check for the largest element
+     */
+    checkForLargestElement() {
+        // Check large visible elements - common LCP candidates
+        const candidates = [
+            ...Array.from(document.querySelectorAll('img')),
+            ...Array.from(document.querySelectorAll('.product-image')),
+            ...Array.from(document.querySelectorAll('h1')),
+            ...Array.from(document.querySelectorAll('video')),
+            ...Array.from(document.querySelectorAll('.product-item')),
+        ];
+        
+        let largestElement = null;
+        let largestSize = 0;
+        
+        candidates.forEach(el => {
+            if (!el.isConnected) return;
+            
+            // Get element dimensions
+            const rect = el.getBoundingClientRect();
+            let area = rect.width * rect.height;
+            let effectiveElement = el;
+            
+            // Check if the element contains an image and use it instead
+            const largestImage = this.findLargestImageWithin(el);
+            if (largestImage) {
+                effectiveElement = largestImage;
+                const imageRect = largestImage.getBoundingClientRect();
+                area = imageRect.width * imageRect.height;
+            }
+            
+            // Check if it's in viewport
+            const isInViewport = (
+                rect.top < window.innerHeight &&
+                rect.bottom > 0 &&
+                rect.left < window.innerWidth &&
+                rect.right > 0
+            );
+            
+            // For images, only consider if they're loaded
+            if (effectiveElement.tagName === 'IMG' && (!effectiveElement.complete || !effectiveElement.naturalWidth)) {
+                return;
+            }
+            
+            // Only track elements that are in viewport and visible
+            if (isInViewport && area > largestSize) {
+                largestSize = area;
+                largestElement = effectiveElement;
+                
+                // Record as potential LCP if not already set
+                if (!this.metrics.webVitals.lcp || this.metrics.webVitals.lcp.element === 'unknown') {
+                    const now = performance.now();
+                    this.metrics.webVitals.lcp = {
+                        value: now,
+                        element: effectiveElement.tagName,
+                        elementId: effectiveElement.id,
+                        elementClass: effectiveElement.className,
+                        size: area,
+                        renderTime: now,
+                        rating: this.getRating(now, CONFIG.performance.lcp),
+                        method: 'fallback'
+                    };
+                    
+                    // Also store in window.metrics for comparison if available
+                    if (window.metrics) {
+                        window.metrics.nativeLCP = { 
+                            ...this.metrics.webVitals.lcp,
+                            method: 'fallback'
+                        };
+                    }
+                    
+                    console.log('Fallback LCP detected:', this.metrics.webVitals.lcp);
+                    this.displayMetrics();
+                }
+            }
+        });
+    }
+
+    /**
+     * Find the largest image within an element
+     */
+    findLargestImageWithin(element) {
+        if (element.tagName === 'IMG') {
+            return element;
+        }
+        
+        const images = element.querySelectorAll('img');
+        let largestImage = null;
+        let largestArea = 0;
+        
+        images.forEach(img => {
+            const area = img.offsetWidth * img.offsetHeight;
+            if (area > largestArea) {
+                largestArea = area;
+                largestImage = img;
+            }
+        });
+        
+        return largestImage;
     }
     
     /**
