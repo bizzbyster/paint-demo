@@ -349,29 +349,32 @@ class ImageLoader {
                     type: 'low-res'
                 });
                 
+                // Use nested requestAnimationFrame for more reliable paint detection
                 requestAnimationFrame(() => {
-                    const lowResPaintTime = performance.now() - that.timingData.startTime;
-                    that.timingData.paintDeltas.push({
-                        imageIndex: index,
-                        loadTime: loadTime,
-                        paintTime: lowResPaintTime,
-                        delta: lowResPaintTime - loadTime,
-                        method: 'requestAnimationFrame',
-                        type: 'low-res'
-                    });
-                    
-                    // Notify metrics tracker
-                    if (that.metricsTracker) {
-                        that.metricsTracker.recordPaintEvent({
-                            element: img,
-                            time: performance.now(),
-                            type: 'lqip-low-res',
-                            metadata: {
-                                loadTime: loadTime,
-                                paintTime: lowResPaintTime
-                            }
+                    requestAnimationFrame(() => {
+                        const lowResPaintTime = performance.now() - that.timingData.startTime;
+                        that.timingData.paintDeltas.push({
+                            imageIndex: index,
+                            loadTime: loadTime,
+                            paintTime: lowResPaintTime,
+                            delta: lowResPaintTime - loadTime,
+                            method: 'double-rAF',
+                            type: 'low-res'
                         });
-                    }
+                        
+                        // Notify metrics tracker
+                        if (that.metricsTracker) {
+                            that.metricsTracker.recordPaintEvent({
+                                element: img,
+                                time: performance.now(),
+                                type: 'lqip-low-res',
+                                metadata: {
+                                    loadTime: loadTime,
+                                    paintTime: lowResPaintTime
+                                }
+                            });
+                        }
+                    });
                 });
                 
                 img.removeEventListener('load', onLowResLoad);
@@ -420,58 +423,81 @@ class ImageLoader {
     }
     
     /**
-     * Monitor image paint time
+     * Enhanced monitor image paint time function
+     * Works better across browsers including Safari
      */
     monitorPaintTime(img, index, loadTime, type = 'standard') {
+        // The key issue is Safari needs multiple frames to actually paint
+        // Store original dimensions for reference
         const originalWidth = img.offsetWidth;
         const originalHeight = img.offsetHeight;
         let paintDetected = false;
         
-        const checkPaint = () => {
-            if (!paintDetected && (img.offsetWidth !== originalWidth || img.offsetHeight !== originalHeight || img.naturalWidth > 0)) {
-                const paintTime = performance.now() - this.timingData.startTime;
-                paintDetected = true;
-                
-                if (paintTime - loadTime > 10000) {
-                    console.warn(`Unusually high paint delta detected (${(paintTime - loadTime).toFixed(2)}ms) for image ${index}, ignoring.`);
-                    return;
-                }
-                
-                const existingDelta = this.timingData.paintDeltas.find(
-                    item => item.imageIndex === index && item.type === type
-                );
-                
-                if (!existingDelta) {
-                    this.timingData.paintDeltas.push({
-                        imageIndex: index,
-                        loadTime: loadTime,
-                        paintTime: paintTime,
-                        delta: paintTime - loadTime,
-                        method: 'requestAnimationFrame',
-                        type: type
-                    });
-                }
-                
-                return;
-            }
-            
-            if (!paintDetected && performance.now() - this.timingData.startTime < 10000) {
-                requestAnimationFrame(checkPaint);
-            }
+        // More reliable paint detection with double requestAnimationFrame
+        const detectPaint = () => {
+            // First rAF gets us to the next frame
+            requestAnimationFrame(() => {
+                // Second rAF is more likely to be after the paint has actually occurred
+                requestAnimationFrame(() => {
+                    // Check if paint has been detected
+                    if (!paintDetected) {
+                        // For Safari, checking naturalWidth > 0 is more reliable
+                        if (img.complete && img.naturalWidth > 0) {
+                            const paintTime = performance.now() - this.timingData.startTime;
+                            paintDetected = true;
+                            
+                            if (paintTime - loadTime > 10000) {
+                                console.warn(`Unusually high paint delta detected (${(paintTime - loadTime).toFixed(2)}ms) for image ${index}, ignoring.`);
+                                return;
+                            }
+                            
+                            const existingDelta = this.timingData.paintDeltas.find(
+                                item => item.imageIndex === index && item.type === type
+                            );
+                            
+                            if (!existingDelta) {
+                                this.timingData.paintDeltas.push({
+                                    imageIndex: index,
+                                    loadTime: loadTime,
+                                    paintTime: paintTime,
+                                    delta: paintTime - loadTime,
+                                    method: 'double-rAF',
+                                    type: type
+                                });
+                            }
+                            
+                            // Log paint detection
+                            console.log(`Paint detected for image ${index} (${type}) at ${paintTime.toFixed(2)}ms, delta: ${(paintTime - loadTime).toFixed(2)}ms`);
+                            return;
+                        }
+                        
+                        // If painting hasn't happened yet, keep checking
+                        if (performance.now() - this.timingData.startTime < 10000) {
+                            detectPaint();
+                        }
+                    }
+                });
+            });
         };
         
+        // Start detection process after a small delay to allow browser to process
         setTimeout(() => {
-            requestAnimationFrame(checkPaint);
+            detectPaint();
         }, 50);
     }
     
     /**
      * Set up Performance Observer for element timing
+     * Now also runs the double-rAF method in parallel for comparison
      */
     setupElementTimingObserver() {
-        if ('PerformanceObserver' in window) {
+        const hasElementTiming = 'PerformanceObserver' in window;
+        let elementObserver = null;
+        
+        // Set up Element Timing API observer if available
+        if (hasElementTiming) {
             try {
-                const elementObserver = new PerformanceObserver((entryList) => {
+                elementObserver = new PerformanceObserver((entryList) => {
                     for (const entry of entryList.getEntries()) {
                         if (entry.identifier && entry.identifier.startsWith('product-image-')) {
                             const imageIndex = parseInt(entry.identifier.split('-').pop()) - 1;
@@ -521,6 +547,46 @@ class ImageLoader {
                 console.warn('Performance observer not fully supported', e);
             }
         }
+        
+        // ALWAYS add double-rAF detection for all images, regardless of browser support
+        // This allows comparison between methods even in browsers with ElementTiming API
+        document.querySelectorAll('.product-image').forEach(img => {
+            img.addEventListener('load', () => {
+                const loadTime = performance.now() - this.timingData.startTime;
+                const index = parseInt(img.dataset.index);
+                
+                // Only add RAF detection for standard images or high-res in LQIP mode
+                const isStandard = this.imageType.value === 'standard';
+                const isHighRes = img.dataset.highres && !img.src.includes(CONFIG.lqipSize);
+                
+                if (isStandard || isHighRes) {
+                    // Use double-rAF to detect paint time
+                    const type = isStandard ? 'standard' : 'high-res';
+                    
+                    // Log that we're using both methods for comparison
+                    console.log(`Adding double-rAF detection for image ${index} (${type}) alongside ElementTiming API`);
+                    
+                    // Use nested requestAnimationFrame for reliable paint detection
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            const rafPaintTime = performance.now() - this.timingData.startTime;
+                            
+                            // Add as a separate entry with different method name
+                            this.timingData.paintDeltas.push({
+                                imageIndex: index,
+                                loadTime: loadTime,
+                                paintTime: rafPaintTime,
+                                delta: rafPaintTime - loadTime,
+                                method: 'double-rAF (explicit)',
+                                type: type
+                            });
+                            
+                            console.log(`RAF paint detection: Image ${index} painted at ${rafPaintTime.toFixed(2)}ms, delta: ${(rafPaintTime - loadTime).toFixed(2)}ms`);
+                        });
+                    });
+                }
+            });
+        });
     }
     
     /**

@@ -33,6 +33,9 @@ class PerformanceMetricsTracker {
         // Store navigation start time
         window.navigationStartTime = this.getNavigationStartTime();
         
+        // Initialize cross-browser timing system
+        this.initCrossBrowserTiming();
+        
         // Capture existing timing data
         this.captureNavigationTiming();
         
@@ -57,6 +60,110 @@ class PerformanceMetricsTracker {
         
         // Initialize LCS tracking
         this.initLargeContentfulSetTracking();
+    }
+    
+    /**
+     * Initialize a cross-browser compatible timing system
+     * This should be added to your metrics-tracker.js
+     */
+    initCrossBrowserTiming() {
+        // Graceful feature detection
+        const hasPerformanceObserver = typeof PerformanceObserver === 'function';
+        const hasElementTiming = hasPerformanceObserver && (() => {
+            try {
+                const test = new PerformanceObserver(() => {});
+                test.observe({entryTypes: ['element']});
+                test.disconnect();
+                return true;
+            } catch (e) {
+                return false;
+            }
+        })();
+        
+        console.log(`Browser timing capabilities: PerformanceObserver: ${hasPerformanceObserver}, ElementTiming: ${hasElementTiming}`);
+        
+        // Create a timestamp relative to navigation
+        this.getRelativeTimestamp = () => {
+            return performance.now();
+        };
+        
+        // Create a unified timing system
+        this.unifiedTimingSystem = {
+            // Record all timing events in one place
+            events: [],
+            
+            // Record a timing event
+            record: (type, detail, timestamp = this.getRelativeTimestamp()) => {
+                const event = {
+                    type,
+                    detail,
+                    timestamp
+                };
+                
+                this.unifiedTimingSystem.events.push(event);
+                return event;
+            },
+            
+            // Calculate time between two event types
+            calculateDelta: (startType, endType) => {
+                const startEvent = this.unifiedTimingSystem.events.find(e => e.type === startType);
+                const endEvent = this.unifiedTimingSystem.events.find(e => e.type === endType);
+                
+                if (startEvent && endEvent) {
+                    return endEvent.timestamp - startEvent.timestamp;
+                }
+                return null;
+            }
+        };
+        
+        // Set up Safari-compatible image load to paint monitoring
+        if (!hasElementTiming) {
+            this.monitorImagePaint = (img, metadata = {}) => {
+                // First detect load
+                const onLoad = () => {
+                    const loadTime = this.getRelativeTimestamp();
+                    this.unifiedTimingSystem.record('image-load', {
+                        element: img,
+                        size: img.width * img.height,
+                        src: img.src,
+                        ...metadata
+                    }, loadTime);
+                    
+                    // Then detect paint using double rAF technique
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            const paintTime = this.getRelativeTimestamp();
+                            this.unifiedTimingSystem.record('image-paint', {
+                                element: img,
+                                size: img.width * img.height,
+                                src: img.src,
+                                loadTime,
+                                delta: paintTime - loadTime,
+                                ...metadata
+                            }, paintTime);
+                            
+                            // Update LCP/LCS as needed
+                            this.checkForLargestElement();
+                        });
+                    });
+                    
+                    img.removeEventListener('load', onLoad);
+                };
+                
+                if (img.complete) {
+                    onLoad();
+                } else {
+                    img.addEventListener('load', onLoad);
+                }
+            };
+            
+            // Apply to all product images
+            document.querySelectorAll('.product-image').forEach(img => {
+                this.monitorImagePaint(img, {source: 'safari-compatible-monitor'});
+            });
+        }
+        
+        return this.unifiedTimingSystem;
     }
     
     /**
@@ -573,7 +680,9 @@ class PerformanceMetricsTracker {
                         }
                     });
                 } else {
-                    requestAnimationFrame(checkImageRender);
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(checkImageRender);
+                    });
                 }
             };
             

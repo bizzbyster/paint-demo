@@ -402,7 +402,7 @@ class DisplayManager {
     }
     
     /**
-     * Display image loading results in HTML
+     * Display image loading results in HTML with method comparison
      */
     displayImageResults(results) {
         if (!this.resultsContainer) return;
@@ -503,10 +503,97 @@ class DisplayManager {
             `;
         }
         
-        // Add load vs paint comparison if available
+        // Enhanced load vs paint comparison with method comparison
         if (results.paintDeltas.length > 0) {
             resultsHTML += `
-                <h3>Load vs. Paint Comparison</h3>
+                <h3>Method Comparison: Element Timing API vs double-rAF</h3>
+                <p>This compares browser's native Element Timing API with our custom double requestAnimationFrame method:</p>
+            `;
+            
+            // Group results by image for comparison
+            const imageGroups = {};
+            results.paintDeltas.forEach(delta => {
+                const key = `${delta.imageIndex}-${delta.type || 'standard'}`;
+                if (!imageGroups[key]) {
+                    imageGroups[key] = {
+                        imageIndex: delta.imageIndex,
+                        type: delta.type || 'standard',
+                        loadTime: delta.loadTime,
+                        methods: {}
+                    };
+                }
+                imageGroups[key].methods[delta.method] = {
+                    paintTime: delta.paintTime,
+                    delta: delta.delta
+                };
+            });
+            
+            // Create comparison table
+            resultsHTML += `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Image</th>
+                            <th>Resolution</th>
+                            <th>Load Time (ms)</th>
+                            <th>Element Timing (ms)</th>
+                            <th>double-rAF (ms)</th>
+                            <th>Difference (ms)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            Object.values(imageGroups).sort((a, b) => a.imageIndex - b.imageIndex).forEach(group => {
+                const apiTiming = group.methods['ElementTiming API'];
+                const rafTiming = group.methods['double-rAF (explicit)'];
+                
+                // Calculate difference between methods if both are available
+                let difference = '';
+                let differenceClass = '';
+                
+                if (apiTiming && rafTiming) {
+                    const diff = rafTiming.paintTime - apiTiming.paintTime;
+                    difference = diff.toFixed(2);
+                    
+                    // Add color coding based on difference
+                    if (Math.abs(diff) < 25) {
+                        differenceClass = 'very-close';
+                    } else if (Math.abs(diff) < 50) {
+                        differenceClass = 'close';
+                    } else {
+                        differenceClass = 'different';
+                    }
+                }
+                
+                resultsHTML += `
+                    <tr>
+                        <td>Product Image ${group.imageIndex + 1}</td>
+                        <td>${group.type}</td>
+                        <td>${group.loadTime.toFixed(2)}</td>
+                        <td class="api-method">${apiTiming ? apiTiming.paintTime.toFixed(2) : 'N/A'}</td>
+                        <td class="raf-method">${rafTiming ? rafTiming.paintTime.toFixed(2) : 'N/A'}</td>
+                        <td class="${differenceClass}">${difference}</td>
+                    </tr>
+                `;
+            });
+            
+            resultsHTML += `
+                    </tbody>
+                </table>
+                
+                <style>
+                    .api-method { background-color: #f0f8ff; }
+                    .raf-method { background-color: #fff8f0; }
+                    .very-close { background-color: #e6ffe6; color: #006600; font-weight: bold; }
+                    .close { background-color: #fffde6; color: #666600; font-weight: bold; }
+                    .different { background-color: #fff0f0; color: #660000; font-weight: bold; }
+                </style>
+            `;
+            
+            // Add original load vs paint table with both methods for detailed analysis
+            resultsHTML += `
+                <h3>Load vs. Paint Comparison (All Methods)</h3>
                 <p>This shows the difference between when an image finishes loading (JavaScript load event) and when it's actually painted to the screen:</p>
                 <table>
                     <thead>
@@ -515,6 +602,7 @@ class DisplayManager {
                             <th>Resolution</th>
                             <th>Load Time (ms)</th>
                             <th>Paint Time (ms)</th>
+                            <th>Paint Method</th>
                             <th>Delta (ms)</th>
                             <th>Notes</th>
                         </tr>
@@ -522,11 +610,16 @@ class DisplayManager {
                     <tbody>
             `;
             
-            // Sort paint deltas by image index, then by type (low-res first)
+            // Sort paint deltas first by image index, then by method (API first, then RAF)
             results.paintDeltas
                 .sort((a, b) => {
                     if (a.imageIndex !== b.imageIndex) return a.imageIndex - b.imageIndex;
-                    return (a.type === 'low-res' ? -1 : 1);
+                    if (a.type !== b.type) return (a.type === 'low-res' ? -1 : 1);
+                    
+                    // Sort ElementTiming API first, then RAF methods
+                    if (a.method.includes('ElementTiming') && !b.method.includes('ElementTiming')) return -1;
+                    if (!a.method.includes('ElementTiming') && b.method.includes('ElementTiming')) return 1;
+                    return 0;
                 })
                 .forEach(delta => {
                     let notes = "";
@@ -568,12 +661,17 @@ class DisplayManager {
                         }
                     }
                     
+                    // Add special highlighting based on method
+                    const methodClass = delta.method.includes('ElementTiming') ? 'api-method' : 
+                                       (delta.method.includes('rAF') ? 'raf-method' : '');
+                    
                     resultsHTML += `
                         <tr>
                             <td>Product Image ${delta.imageIndex + 1}</td>
                             <td>${delta.type || 'standard'}</td>
                             <td>${delta.loadTime.toFixed(2)}</td>
                             <td>${delta.paintTime.toFixed(2)}</td>
+                            <td class="${methodClass}">${delta.method || 'unknown'}</td>
                             <td><strong>${delta.delta.toFixed(2)}</strong></td>
                             <td>${notes}</td>
                         </tr>
@@ -585,6 +683,16 @@ class DisplayManager {
                 </table>
             `;
         }
+        
+        // Add explanation of methods and browser compatibility
+        resultsHTML += `
+            <div class="info-note">
+                <h4>About Paint Timing Methods</h4>
+                <p><strong>ElementTiming API:</strong> A browser-native API that reports when elements are rendered. Available in Chrome and some Chromium-based browsers, but not Safari.</p>
+                <p><strong>double-rAF:</strong> Uses nested requestAnimationFrame calls to detect when an image is painted. This method works across all browsers and provides a good approximation of actual paint time.</p>
+                <p>The difference between these methods shows how closely our cross-browser compatible approach matches the browser's native timing.</p>
+            </div>
+        `;
         
         // Update the results element
         this.resultsContainer.innerHTML = resultsHTML;
