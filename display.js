@@ -95,11 +95,11 @@ window.DisplayManager = class DisplayManager {
             entries.shift(); // Remove oldest entry
         }
         
-        // Add new entry
+        // Add new entry with navigation-relative timing
         entries.push(
-            `Image ${debugInfo.index} at ${new Date().toISOString().substring(11, 23)}:\n` +
+            `Image ${debugInfo.index} at ${debugInfo.timeMs}ms:\n` +
             `Position: top=${debugInfo.elementPosition.top}, bottom=${debugInfo.elementPosition.bottom}, ` +
-            `left=${debugInfo.elementPosition.left}, right=${debugInfo.elementPosition.right}\n` +
+            `left=${debugInfo.elementPosition.left || 0}, right=${debugInfo.elementPosition.right || 0}\n` +
             `Size: ${debugInfo.elementPosition.width}×${debugInfo.elementPosition.height}\n` +
             `In Viewport: ${debugInfo.isInViewport} (${debugInfo.visiblePercent}% visible)\n` +
             `Calculation: top<vh=${debugInfo.calculation.topTest}, bottom>0=${debugInfo.calculation.bottomTest}, ` +
@@ -112,10 +112,10 @@ window.DisplayManager = class DisplayManager {
     updateIntersectionDebugPanel(data) {
         if (!this.intersectionEventsEl) return;
         
-        // Show the last 3 events
+        // Show the last 3 events with navigation-relative timestamps
         const recentEvents = data.logs;
         this.intersectionEventsEl.textContent = recentEvents.map(event => 
-            `[${event.timestamp.substring(11, 23)}] Image ${event.imageIndex}: ` +
+            `[${event.timeMs}ms] Image ${event.imageIndex}: ` +
             `${event.isIntersecting ? 'Entered' : 'Left'} viewport, ` +
             `Visible: ${event.visiblePercent}%`
         ).join('\n');

@@ -96,10 +96,9 @@ window.ImageLoader = class ImageLoader {
                 // Calculate visible percentage
                 let visiblePercent = Math.round(entry.intersectionRatio * 100);
                 
-                // Log the entry for debugging
+                // Log the entry for debugging with navigation-relative time
                 const entryDebugInfo = {
-                    timestamp: new Date().toISOString(),
-                    relativeTime: viewportTime.toFixed(2),
+                    timeMs: viewportTime.toFixed(2), // Time since navigation start in ms
                     imageIndex: index,
                     isIntersecting: entry.isIntersecting,
                     intersectionRatio: entry.intersectionRatio,
@@ -111,6 +110,9 @@ window.ImageLoader = class ImageLoader {
                         height: Math.round(entry.boundingClientRect.height)
                     }
                 };
+                
+                // Log with consistent time format
+                console.log(`Image ${index}: ${entry.isIntersecting ? 'Entered' : 'Left'} viewport at ${viewportTime.toFixed(2)}ms, Visible: ${visiblePercent}%`);
                 
                 // Add to log and emit event for UI updates
                 this.intersectionLog.unshift(entryDebugInfo);
@@ -173,6 +175,9 @@ window.ImageLoader = class ImageLoader {
             visiblePercent = Math.round((visibleHeight * visibleWidth) / (rect.width * rect.height) * 100);
         }
         
+        // Capture the time since navigation start
+        const viewportTime = getRelativeTime() - this.timingData.startTime;
+        
         // Update status badge
         const statusBadge = element.parentNode.querySelector('.status-badge');
         if (statusBadge) {
@@ -187,8 +192,9 @@ window.ImageLoader = class ImageLoader {
             }
         }
         
-        // Create debug info
+        // Create debug info with navigation-relative time
         const debugInfo = {
+            timeMs: viewportTime.toFixed(2),
             index: element.dataset.index,
             isInViewport: isInViewport,
             visiblePercent: visiblePercent,
@@ -210,13 +216,15 @@ window.ImageLoader = class ImageLoader {
             }
         };
         
+        // Log with consistent time format
+        console.log(`Initial check - Image ${element.dataset.index}: ${isInViewport ? 'In' : 'Out of'} viewport at ${viewportTime.toFixed(2)}ms, Visible: ${visiblePercent}%`);
+        
         // Emit debug info for UI updates
         this.events.emit('viewportUpdate', debugInfo);
         
         // Record viewport entry if in viewport
         if (isInViewport) {
             const index = parseInt(element.dataset.index);
-            const viewportTime = getRelativeTime() - this.timingData.startTime;
             
             if (!this.timingData.viewportDeltas.some(item => item.imageIndex === index)) {
                 this.timingData.viewportDeltas.push({
