@@ -1,6 +1,7 @@
 /**
  * Display script to handle UI updates from ImageLoader
  * This separates the display logic from the core image loading functionality
+ * Includes LCS (Large Contentful Set) metric display
  */
 window.DisplayManager = class DisplayManager {
     constructor(imageLoader) {
@@ -10,6 +11,16 @@ window.DisplayManager = class DisplayManager {
         this.viewportDimEl = document.getElementById('viewport-dimensions');
         this.elementPosEl = document.getElementById('element-positions');
         this.intersectionEventsEl = document.getElementById('intersection-events');
+        
+        // LCS tracking
+        this.lcsData = {
+            elements: [],
+            threshold: 0.8, // Elements within 80% of largest are included
+            lastPaintTime: 0
+        };
+        
+        // Store last results for potential redisplay
+        this._lastResults = null;
         
         // Set up event listeners for imageLoader
         this.setupEventListeners();
@@ -44,6 +55,16 @@ window.DisplayManager = class DisplayManager {
                 this.updateDeviceInfo();
             });
         }
+        
+        // Listen for LCS updates
+        window.addEventListener('lcs-update', (event) => {
+            if (event.detail) {
+                this.lcsData = event.detail;
+                if (this._lastResults) {
+                    this.displayResults(this._lastResults);
+                }
+            }
+        });
     }
     
     updateDeviceInfo() {
@@ -126,6 +147,9 @@ window.DisplayManager = class DisplayManager {
      */
     displayResults(results) {
         if (!this.resultsContainer) return;
+        
+        // Store results for potential redisplay
+        this._lastResults = results;
         
         // Create results HTML
         let resultsHTML = `
@@ -306,7 +330,93 @@ window.DisplayManager = class DisplayManager {
             `;
         }
         
+        // Add LCS table if data available
+        if (this.lcsData.elements.length > 0) {
+            resultsHTML += this.generateLCSTableHTML();
+        }
+        
         // Update the results element
         this.resultsContainer.innerHTML = resultsHTML;
+    }
+    
+    /**
+     * Generate HTML for the Large Contentful Set (LCS) table
+     */
+    generateLCSTableHTML() {
+        // Sort elements by size (largest first)
+        const sortedElements = [...this.lcsData.elements].sort((a, b) => b.area - a.area);
+        
+        // Get largest element size for percentage calculation
+        const largestSize = sortedElements.length > 0 ? sortedElements[0].area : 0;
+        
+        // Generate rows
+        const rows = sortedElements.map(item => {
+            const element = item.element;
+            const percentage = ((item.area / largestSize) * 100).toFixed(1);
+            const elementInfo = this.formatElementInfo(element);
+            
+            return `
+                <tr>
+                    <td>${elementInfo}</td>
+                    <td>${item.area}</td>
+                    <td>${item.paintEvent.time.toFixed(2)}</td>
+                    <td>${percentage}%</td>
+                </tr>
+            `;
+        }).join('');
+        
+        // Create the full table HTML
+        return `
+            <h3>Large Contentful Set (LCS) Analysis</h3>
+            <p>This shows the set of large elements that are at least ${Math.round(this.lcsData.threshold * 100)}% of the largest element's size:</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Element</th>
+                        <th>Size (pixels)</th>
+                        <th>Paint Time (ms)</th>
+                        <th>% of Largest</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows}
+                </tbody>
+            </table>
+            <p><strong>LCS Completion Time:</strong> ${this.lcsData.lastPaintTime.toFixed(2)}ms - when all large elements finished painting</p>
+        `;
+    }
+    
+    /**
+     * Format element information for display
+     */
+    formatElementInfo(element) {
+        let info = element.tagName;
+        
+        if (element.className && element.className.length > 0) {
+            info += `.${element.className.replace(/\s+/g, '.')}`;
+        }
+        
+        if (element.id) {
+            info += `#${element.id}`;
+        }
+        
+        // Add product image index if available
+        if (element.dataset && element.dataset.index) {
+            info += ` (Image ${parseInt(element.dataset.index) + 1})`;
+        }
+        
+        return info;
+    }
+    
+    /**
+     * Update LCS data externally
+     */
+    updateLCSData(lcsData) {
+        this.lcsData = lcsData;
+        
+        // Redisplay if we have results
+        if (this._lastResults) {
+            this.displayResults(this._lastResults);
+        }
     }
 };

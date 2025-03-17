@@ -5,6 +5,42 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Image Load vs Paint Timing</title>
     <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Additional styles for enhanced metrics display */
+        #page-metrics-content .section-header {
+            background-color: #f5f5f5;
+            border-top: 1px solid #ddd;
+            border-bottom: 1px solid #ddd;
+            font-weight: bold;
+        }
+        #page-metrics-content .section-header td {
+            padding: 8px;
+            text-align: left;
+            color: #333;
+        }
+        
+        /* Improved metric value styling */
+        .metric-good {
+            color: #27ae60;
+            font-weight: bold;
+        }
+        .metric-average {
+            color: #f39c12;
+            font-weight: bold;
+        }
+        .metric-poor {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+        
+        /* LCP comparison styling */
+        .metric-comparison {
+            background-color: #f8f9fa;
+            border-left: 4px solid #3498db;
+            margin-top: 5px;
+            padding: 5px;
+        }
+    </style>
 </head>
 <body>
     <h1>Image Load vs Paint Timing Demo</h1>
@@ -69,6 +105,7 @@
         <h3>About Page Performance</h3>
         <p><strong>First Contentful Paint (FCP):</strong> Marks when the first text or image is painted.</p>
         <p><strong>Largest Contentful Paint (LCP):</strong> Marks when the largest content element is painted.</p>
+        <p><strong>Large Contentful Set (LCS):</strong> Set of large elements (at least 80% of largest) and when they all finish painting.</p>
         <p><strong>Safari Compatibility:</strong> LCP doesn't work natively in Safari, so we use a fallback detection mechanism.</p>
         <p><strong>InViewport Logic:</strong> We use these calculations to determine if an element is in the viewport:</p>
         <pre>
@@ -135,10 +172,776 @@ isInViewport = (
     };
     </script>
     
+    <!-- Global metrics object to store custom metrics data -->
+    <script>
+    window.metrics = {
+        customLCP: null,  // Custom LCP implementation data
+        nativeLCP: null,  // Native LCP data from browser API
+        lcs: {            // Large Contentful Set data
+            elements: [],
+            threshold: 0.8,
+            lastPaintTime: 0
+        }
+    };
+    </script>
+    
     <!-- Load the modules -->
     <script src="metrics.js"></script>
     <script src="imageLoader.js"></script>
     <script src="display.js"></script>
+    
+    <!-- Enhanced Metrics Display Functions -->
+    <script>
+    /**
+     * Enhanced metrics display function with prioritized LCP comparison
+     * This function overrides the original displayMetrics function to improve the organization
+     */
+    function displayEnhancedMetrics() {
+        // Only update if page metrics tracker is available
+        if (!window.pageMetricsTracker || !window.pageMetricsTracker.metrics) return;
+        
+        // Store a reference to original function if needed
+        if (!window._originalDisplayMetrics) {
+            window._originalDisplayMetrics = window.pageMetricsTracker.displayMetrics;
+        }
+        
+        // Override the display function to reorganize metrics
+        window.pageMetricsTracker.displayMetrics = function() {
+            const metricsContainer = document.getElementById('page-metrics-content');
+            if (!metricsContainer) return;
+            
+            // Get current metrics
+            const navTiming = this.metrics.navigationTiming || {};
+            const paintTiming = this.metrics.paintTiming || {};
+            const webVitals = this.metrics.webVitals || {};
+            
+            // Get the native LCP and custom LCP data (if available)
+            const nativeLCP = webVitals.lcp || null;
+            const customLCP = window.metrics?.customLCP || null;
+            const lcsData = window.metrics?.lcs || null;
+            
+            // Create HTML table
+            let html = '<table><thead><tr><th>Metric</th><th>Value</th><th>Notes</th></tr></thead><tbody>';
+            
+            // Add navigation start reference
+            const navStartTime = navTiming.navigationStart;
+            if (navStartTime) {
+                html += `
+                    <tr>
+                        <td><strong>Navigation Start Reference</strong></td>
+                        <td>${new Date(navStartTime).toISOString()}</td>
+                        <td>All times are relative to this point</td>
+                    </tr>
+                `;
+            }
+            
+            // --- FIRST SECTION: LCP METRICS COMPARISON ---
+            if (nativeLCP || customLCP) {
+                html += `
+                    <tr class="section-header">
+                        <td colspan="3"><strong>LCP Measurements Comparison</strong></td>
+                    </tr>
+                `;
+                
+                // Add native LCP (if available)
+                if (nativeLCP) {
+                    const lcpElement = `${nativeLCP.element}${nativeLCP.elementClass ? ', Class: ' + nativeLCP.elementClass : ''}${nativeLCP.elementId ? ', ID: ' + nativeLCP.elementId : ''}`;
+                    
+                    html += `
+                        <tr>
+                            <td><strong>Native LCP (Browser API)</strong></td>
+                            <td class="metric-${nativeLCP.rating}">${nativeLCP.value.toFixed(2)} ms</td>
+                            <td>
+                                Element: ${lcpElement}<br>
+                                Size: ${nativeLCP.size} pixels<br>
+                                ${nativeLCP.url ? 'URL: ' + nativeLCP.url + '<br>' : ''}
+                                ${nativeLCP.loadTime ? 'Load Time: ' + nativeLCP.loadTime.toFixed(2) + ' ms<br>' : ''}
+                                ${nativeLCP.renderTime ? 'Render Time: ' + nativeLCP.renderTime.toFixed(2) + ' ms' : ''}
+                            </td>
+                        </tr>
+                    `;
+                }
+                
+                // Add custom LCP (if available)
+                if (customLCP) {
+                    const lcpElement = `${customLCP.element}${customLCP.elementClass ? ', Class: ' + customLCP.elementClass : ''}${customLCP.elementId ? ', ID: ' + customLCP.elementId : ''}`;
+                    
+                    html += `
+                        <tr>
+                            <td><strong>Custom LCP Implementation</strong></td>
+                            <td>${customLCP.value.toFixed(2)} ms</td>
+                            <td>
+                                Element: ${lcpElement}<br>
+                                Size: ${customLCP.size} pixels<br>
+                                ${customLCP.url ? 'URL: ' + customLCP.url + '<br>' : ''}
+                                Method: ${customLCP.method}
+                            </td>
+                        </tr>
+                    `;
+                }
+                
+                // If we have both, add comparison analysis
+                if (nativeLCP && customLCP) {
+                    const difference = Math.abs(nativeLCP.value - customLCP.value);
+                    const differencePercent = ((difference / nativeLCP.value) * 100).toFixed(1);
+                    const isLargeDiscrepancy = difference > 500;
+                    const elementsDiffer = nativeLCP.element !== customLCP.element || 
+                                           nativeLCP.elementClass !== customLCP.elementClass;
+                    
+                    let analysisHtml = `Difference: <strong>${difference.toFixed(2)} ms</strong> (${differencePercent}%)<br>`;
+                    
+                    // Add potential reasons for discrepancy
+                    if (isLargeDiscrepancy || elementsDiffer) {
+                        analysisHtml += '<strong>Potential reasons for discrepancy:</strong><br>';
+                        
+                        if (elementsDiffer) {
+                            analysisHtml += '- Different elements identified as LCP<br>';
+                        }
+                        
+                        if (isLargeDiscrepancy) {
+                            analysisHtml += '- Chrome\'s LCP detection includes additional paint events<br>';
+                            analysisHtml += '- Browser may be using different timing approach<br>';
+                            analysisHtml += '- Native LCP includes text rendering and image processing time<br>';
+                        }
+                    }
+                    
+                    html += `
+                        <tr>
+                            <td><strong>LCP Discrepancy Analysis</strong></td>
+                            <td>${difference.toFixed(2)} ms</td>
+                            <td>${analysisHtml}</td>
+                        </tr>
+                    `;
+                }
+            }
+            
+            // --- SECOND SECTION: LCS METRICS ---
+            if (lcsData && lcsData.elements && lcsData.elements.length > 0) {
+                const elementSummary = lcsData.elements.map(item => {
+                    return `${item.element.tagName}${item.element.classList.contains('product-image') ? '.product-image' : ''} (${item.area} px, ${item.paintEvent.time.toFixed(0)}ms)`;
+                }).join(', ');
+                
+                html += `
+                    <tr class="section-header">
+                        <td colspan="3"><strong>Large Contentful Set (LCS) Metrics</strong></td>
+                    </tr>
+                    <tr>
+                        <td><strong>LCS Completion Time</strong></td>
+                        <td>${lcsData.lastPaintTime.toFixed(2)} ms</td>
+                        <td>
+                            Set of ${lcsData.elements.length} large elements<br>
+                            Threshold: ${Math.round(lcsData.threshold * 100)}% of largest<br>
+                            Elements: ${elementSummary}
+                        </td>
+                    </tr>
+                `;
+            }
+            
+            // --- THIRD SECTION: OTHER WEB VITALS ---
+            html += `
+                <tr class="section-header">
+                    <td colspan="3"><strong>Other Web Vitals</strong></td>
+                </tr>
+            `;
+            
+            // FCP (if available)
+            if (webVitals.fcp) {
+                html += `
+                    <tr>
+                        <td><strong>First Contentful Paint (FCP)</strong></td>
+                        <td class="metric-${webVitals.fcp.rating}">${webVitals.fcp.value.toFixed(2)} ms</td>
+                        <td>${this.getFCPDescription(webVitals.fcp.rating)}</td>
+                    </tr>
+                `;
+            }
+            
+            // CLS (if available)
+            if (webVitals.cls) {
+                html += `
+                    <tr>
+                        <td><strong>Cumulative Layout Shift (CLS)</strong></td>
+                        <td>${webVitals.cls.value.toFixed(4)}</td>
+                        <td>Number of shifts: ${webVitals.cls.entries.length}</td>
+                    </tr>
+                `;
+            }
+            
+            // --- FOURTH SECTION: NAVIGATION TIMING ---
+            html += `
+                <tr class="section-header">
+                    <td colspan="3"><strong>Navigation Timing</strong></td>
+                </tr>
+            `;
+            
+            if (Object.keys(navTiming).length > 0) {
+                html += `
+                    <tr>
+                        <td><strong>DOM Interactive</strong></td>
+                        <td>${navTiming.domInteractive?.toFixed(2) || 'N/A'} ms</td>
+                        <td>DOM is ready for user interaction</td>
+                    </tr>
+                    <tr>
+                        <td><strong>DOM Content Loaded</strong></td>
+                        <td>${navTiming.domContentLoaded?.toFixed(2) || 'N/A'} ms</td>
+                        <td>Initial HTML document loaded and parsed</td>
+                    </tr>
+                    <tr>
+                        <td><strong>DOM Complete</strong></td>
+                        <td>${navTiming.domComplete?.toFixed(2) || 'N/A'} ms</td>
+                        <td>Page and all assets fully loaded</td>
+                    </tr>
+                `;
+            }
+            
+            html += '</tbody></table>';
+            
+            // Update the container
+            metricsContainer.innerHTML = html;
+        };
+        
+        // Trigger a display update
+        window.pageMetricsTracker.displayMetrics();
+    }
+
+    /**
+     * Analyze LCS data to understand why DIV is chosen
+     * This function can be called to inspect the LCS elements and why DIV was chosen
+     */
+    function analyzeLCSSelection() {
+        // Get LCS data
+        const lcsData = window.metrics?.lcs;
+        if (!lcsData || !lcsData.elements || lcsData.elements.length === 0) {
+            console.log("No LCS data available");
+            return;
+        }
+        
+        console.log("Analyzing LCS selection...");
+        
+        // Sort elements by size
+        const sortedElements = [...lcsData.elements].sort((a, b) => b.area - a.area);
+        
+        // Log the largest element details
+        const largestElement = sortedElements[0];
+        console.log("Largest element:", {
+            type: largestElement.element.tagName,
+            class: largestElement.element.className,
+            id: largestElement.element.id,
+            area: largestElement.area,
+            paintTime: largestElement.paintEvent.time.toFixed(2) + 'ms'
+        });
+        
+        // If it's a DIV, try to understand why
+        if (largestElement.element.tagName === 'DIV') {
+            console.log("Examining why DIV was chosen instead of IMG...");
+            
+            // Check if the DIV contains images
+            const images = largestElement.element.querySelectorAll('img');
+            console.log(`DIV contains ${images.length} images`);
+            
+            // Check DIV dimensions
+            const rect = largestElement.element.getBoundingClientRect();
+            console.log("DIV dimensions:", {
+                width: rect.width,
+                height: rect.height,
+                area: rect.width * rect.height
+            });
+            
+            // Find the product images for comparison
+            const productImages = document.querySelectorAll('.product-image');
+            const productImageData = Array.from(productImages).map(img => {
+                const imgRect = img.getBoundingClientRect();
+                return {
+                    index: img.dataset.index,
+                    naturalWidth: img.naturalWidth,
+                    naturalHeight: img.naturalHeight,
+                    displayWidth: imgRect.width,
+                    displayHeight: imgRect.height,
+                    area: imgRect.width * imgRect.height,
+                    complete: img.complete
+                };
+            });
+            
+            console.log("Product images for comparison:", productImageData);
+            
+            // Recommend fixes based on analysis
+            if (largestElement.area > productImageData.reduce((max, img) => Math.max(max, img.area), 0) * 1.5) {
+                console.log("Analysis: DIV is significantly larger than any product image");
+                console.log("Recommendation: Adjust LCS threshold or filter DIV elements");
+            } else {
+                console.log("Analysis: Inconsistent sizing measurement between elements");
+                console.log("Recommendation: Use same measurement technique for all elements");
+            }
+        }
+    }
+
+    /**
+     * Function to run diagnostic checks on why native and custom LCP differ
+     */
+    function diagnoseLCPDiscrepancy() {
+        // Get LCP data
+        const nativeLCP = window.pageMetricsTracker?.metrics?.webVitals?.lcp;
+        const customLCP = window.metrics?.customLCP;
+        
+        if (!nativeLCP || !customLCP) {
+            console.log("Both native and custom LCP data required for diagnosis");
+            return;
+        }
+        
+        console.log("Diagnosing LCP discrepancy...");
+        console.log("Native LCP:", {
+            element: nativeLCP.element,
+            class: nativeLCP.elementClass,
+            size: nativeLCP.size,
+            time: nativeLCP.value.toFixed(2) + 'ms',
+            loadTime: nativeLCP.loadTime,
+            renderTime: nativeLCP.renderTime
+        });
+        
+        console.log("Custom LCP:", {
+            element: customLCP.element,
+            class: customLCP.elementClass,
+            size: customLCP.size,
+            time: customLCP.value.toFixed(2) + 'ms'
+        });
+        
+        const timeDiff = Math.abs(nativeLCP.value - customLCP.value);
+        const percentDiff = ((timeDiff / nativeLCP.value) * 100).toFixed(1);
+        
+        console.log(`Time difference: ${timeDiff.toFixed(2)}ms (${percentDiff}%)`);
+        
+        // Analyze reasons for difference
+        const reasons = [];
+        
+        if (nativeLCP.element !== customLCP.element || nativeLCP.elementClass !== customLCP.elementClass) {
+            reasons.push("Different elements identified as LCP");
+        }
+        
+        if (Math.abs(nativeLCP.size - customLCP.size) > 1000) {
+            reasons.push("Significant difference in measured element size");
+        }
+        
+        if (timeDiff > 500) {
+            reasons.push("Chrome may include additional processing time in LCP calculation");
+            reasons.push("Chrome's algorithm may account for content stabilization time");
+            reasons.push("Timing API differences between custom implementation and browser");
+        }
+        
+        console.log("Potential reasons for discrepancy:", reasons);
+        
+        // Recommendations
+        console.log("Recommendations:");
+        console.log("1. For consistent cross-browser metrics, use the custom implementation");
+        console.log("2. For Chrome-specific performance optimization, use the native metric");
+        console.log("3. Consider the LCS metric for a more complete picture of content rendering");
+    }
+    </script>
+    
+    <!-- Enhanced Safari LCP Implementation with LCS -->
+    <script>
+    /**
+     * Enhanced Safari LCP Polyfill with:
+     * 1. Native vs Custom LCP comparison
+     * 2. Large Contentful Set (LCS) metric
+     */
+    function initSafariLCPPolyfill() {
+        // Check if we need a polyfill (Safari)
+        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        const needsPolyfill = isSafari && (!window.PerformanceObserver || 
+            (() => {
+                try {
+                    const testObserver = new PerformanceObserver(() => {});
+                    testObserver.observe({ type: 'largest-contentful-paint', buffered: true });
+                    testObserver.disconnect();
+                    return false; // No need for polyfill
+                } catch (e) {
+                    return true; // Needs polyfill
+                }
+            })());
+        
+        // Unified timing for consistent time references
+        const unifiedTiming = {
+            paintEvents: [],     // All paint events across elements
+            
+            // Record a paint event
+            recordPaint: function(element, type, metadata = {}) {
+                const time = performance.now();
+                const rect = element.getBoundingClientRect();
+                const area = rect.width * rect.height;
+                
+                const event = {
+                    time,
+                    type,
+                    element: element.tagName,
+                    class: element.className,
+                    id: element.id || null,
+                    area,
+                    index: element.dataset.index,
+                    isProductImage: element.classList.contains('product-image'),
+                    ...metadata
+                };
+                
+                this.paintEvents.push(event);
+                console.log(`[${time.toFixed(2)}ms] ${type} - ${element.tagName}${element.className ? '.' + element.className.replace(/\s+/g, '.') : ''} (${area} pixels)`);
+                
+                // After recording any paint event, check if it affects our metrics
+                updateMetricsWithPaintEvent(element, event);
+                
+                return time;
+            },
+            
+            // Get all paint events for analysis
+            getAllPaintEvents: function() {
+                return this.paintEvents;
+            }
+        };
+        
+        // Function to update metrics when a paint event occurs
+        function updateMetricsWithPaintEvent(element, paintEvent) {
+            // Only consider visible elements
+            if (!isElementVisible(element)) return;
+            
+            // Potential LCP update
+            updateCustomLCP(element, paintEvent);
+            
+            // Update Large Contentful Set
+            updateLCS(element, paintEvent);
+        }
+        
+        // Calculate if element is visible in viewport
+        function isElementVisible(element) {
+            const rect = element.getBoundingClientRect();
+            
+            return (
+                rect.top < window.innerHeight &&
+                rect.bottom > 0 &&
+                rect.left < window.innerWidth &&
+                rect.right > 0 &&
+                rect.width > 0 &&
+                rect.height > 0
+            );
+        }
+        
+        // Update custom LCP metric
+        function updateCustomLCP(element, paintEvent) {
+            const area = paintEvent.area;
+            
+            // Check if this is larger than current largest
+            if (!window.metrics.customLCP || area > window.metrics.customLCP.size) {
+                // Create new custom LCP metric
+                window.metrics.customLCP = {
+                    value: paintEvent.time,
+                    element: element.tagName,
+                    elementId: element.id || null,
+                    elementClass: element.className || null,
+                    size: area,
+                    url: element.tagName === 'IMG' ? element.src : null,
+                    renderTime: paintEvent.time,
+                    method: 'custom-implementation',
+                    paintEvent: paintEvent
+                };
+                
+                console.log(`New Custom LCP: ${element.tagName} (${area} pixels) at ${paintEvent.time.toFixed(2)}ms`);
+            }
+        }
+        
+        // Update Large Contentful Set (LCS)
+        function updateLCS(element, paintEvent) {
+            const area = paintEvent.area;
+            
+            // If no elements or empty set, initialize with this element
+            if (window.metrics.lcs.elements.length === 0) {
+                window.metrics.lcs.elements.push({
+                    element: element,
+                    paintEvent: paintEvent,
+                    area: area
+                });
+                window.metrics.lcs.lastPaintTime = paintEvent.time;
+                return;
+            }
+            
+            // Get current largest element area
+            const largestArea = Math.max(...window.metrics.lcs.elements.map(item => item.area));
+            
+            // Calculate threshold area based on largest element
+            const thresholdArea = largestArea * window.metrics.lcs.threshold;
+            
+            // Check if this element is large enough to be included in the set
+            if (area >= thresholdArea) {
+                // Check if this element is already in the set
+                const existingIndex = window.metrics.lcs.elements.findIndex(item => 
+                    item.element.tagName === element.tagName &&
+                    item.element.className === element.className &&
+                    item.element.id === element.id &&
+                    item.element.dataset.index === element.dataset.index
+                );
+                
+                if (existingIndex >= 0) {
+                    // Update existing element data
+                    window.metrics.lcs.elements[existingIndex] = {
+                        element: element,
+                        paintEvent: paintEvent,
+                        area: area
+                    };
+                } else {
+                    // Add new element to set
+                    window.metrics.lcs.elements.push({
+                        element: element,
+                        paintEvent: paintEvent,
+                        area: area
+                    });
+                }
+                
+                // Update the last paint time if this is later
+                if (paintEvent.time > window.metrics.lcs.lastPaintTime) {
+                    window.metrics.lcs.lastPaintTime = paintEvent.time;
+                }
+                
+                console.log(`Updated LCS: Now ${window.metrics.lcs.elements.length} elements, last paint at ${window.metrics.lcs.lastPaintTime.toFixed(2)}ms`);
+            }
+            
+            // If this is a larger element, we need to recalculate the set
+            if (area > largestArea) {
+                // Recalculate threshold based on new largest
+                const newThreshold = area * window.metrics.lcs.threshold;
+                
+                // Filter out elements that no longer meet the threshold
+                window.metrics.lcs.elements = window.metrics.lcs.elements.filter(item => item.area >= newThreshold);
+                
+                // Recalculate last paint time
+                if (window.metrics.lcs.elements.length > 0) {
+                    window.metrics.lcs.lastPaintTime = Math.max(...window.metrics.lcs.elements.map(item => item.paintEvent.time));
+                }
+            }
+            
+            // Trigger display update
+            if (window.displayManager && window.displayManager.updateLCSData) {
+                window.displayManager.updateLCSData(window.metrics.lcs);
+            }
+        }
+        
+        // Initialize native LCP detection if available
+        function initNativeLCPDetection() {
+            // Only try if PerformanceObserver is available
+            if ('PerformanceObserver' in window) {
+                try {
+                    const lcpObserver = new PerformanceObserver((entryList) => {
+                        const entries = entryList.getEntries();
+                        const lastEntry = entries[entries.length - 1];
+                        
+                        if (!lastEntry) return;
+                        
+                        console.log(`Native LCP detected at ${lastEntry.startTime}ms for element ${lastEntry.element?.tagName}`);
+                        
+                        // Store the native LCP in both window.metrics and pageMetricsTracker
+                        window.metrics.nativeLCP = {
+                            value: lastEntry.startTime,
+                            element: lastEntry.element ? lastEntry.element.tagName : 'unknown',
+                            elementId: lastEntry.element ? lastEntry.element.id : null,
+                            elementClass: lastEntry.element ? lastEntry.element.className : null,
+                            size: lastEntry.size,
+                            url: lastEntry.url,
+                            renderTime: lastEntry.renderTime || lastEntry.startTime,
+                            method: 'native-api'
+                        };
+                        
+                        // If this element triggered a native LCP, record it in our system too
+                        if (lastEntry.element) {
+                            unifiedTiming.recordPaint(lastEntry.element, 'native-lcp', {
+                                size: lastEntry.size,
+                                renderTime: lastEntry.renderTime || lastEntry.startTime
+                            });
+                        }
+                    });
+                    
+                   // Use the recommended buffered flag for more reliable detection
+                    try {
+                        lcpObserver.observe({ 
+                            type: 'largest-contentful-paint', 
+                            buffered: true 
+                        });
+                    } catch (err) {
+                        // Fallback to older syntax
+                        lcpObserver.observe({ entryTypes: ['largest-contentful-paint'] });
+                    }
+                    
+                    console.log('Native LCP detection initialized');
+                } catch (e) {
+                    console.warn('Native LCP observer not supported, using fallback only', e);
+                }
+            }
+        }
+        
+        // Function to track element paints
+        function trackElementPaint(element, metadata = {}) {
+            if (!element || !element.isConnected) return;
+            
+            // Don't process if element is not visible
+            if (!isElementVisible(element)) return;
+            
+            // Record the paint event
+            unifiedTiming.recordPaint(element, 'paint-tracking', metadata);
+        }
+        
+        // Monitor all product images specifically
+        function monitorProductImages() {
+            const productImages = document.querySelectorAll('.product-image');
+            
+            productImages.forEach(img => {
+                // Skip if already monitored
+                if (img.dataset.enhancedMonitored) return;
+                img.dataset.enhancedMonitored = 'true';
+                
+                // Function to check image rendering
+                const checkImageRender = () => {
+                    if (img.complete && img.naturalWidth > 0) {
+                        trackElementPaint(img, {
+                            naturalSize: `${img.naturalWidth}x${img.naturalHeight}`,
+                            displaySize: `${img.width}x${img.height}`,
+                            method: 'product-image-monitor'
+                        });
+                    } else {
+                        requestAnimationFrame(checkImageRender);
+                    }
+                };
+                
+                // Start monitoring
+                if (img.complete) {
+                    checkImageRender();
+                } else {
+                    img.addEventListener('load', () => {
+                        // Record load event
+                        trackElementPaint(img, { event: 'load' });
+                        
+                        // Start monitoring rendering
+                        checkImageRender();
+                    });
+                }
+            });
+        }
+        
+        // Function to find and monitor all large elements in the page
+        function scanForLargeElements() {
+            // Check for images first (most likely to be LCP)
+            const images = document.querySelectorAll('img');
+            images.forEach(img => trackElementPaint(img, { source: 'image-scan' }));
+            
+            // Then check headings and other potential large elements
+            const headings = document.querySelectorAll('h1, h2');
+            headings.forEach(heading => trackElementPaint(heading, { source: 'heading-scan' }));
+            
+            // Check product containers
+            const containers = document.querySelectorAll('.product-item');
+            containers.forEach(container => trackElementPaint(container, { source: 'container-scan' }));
+        }
+        
+        // Implement special filter for DIV elements to avoid them dominating LCS
+        function filterLargeElements() {
+            // If we have an LCS with DIVs, check if we should filter them
+            if (window.metrics.lcs.elements.length > 0) {
+                // Check if the largest element is a DIV and there are also images
+                const hasDivs = window.metrics.lcs.elements.some(item => item.element.tagName === 'DIV');
+                const hasImages = window.metrics.lcs.elements.some(item => item.element.tagName === 'IMG');
+                
+                // If we have both, and DIVs are dominating, try to filter them out
+                if (hasDivs && hasImages) {
+                    // Find all images elements
+                    const imageElements = window.metrics.lcs.elements.filter(item => item.element.tagName === 'IMG');
+                    
+                    // If we have image elements, consider using only those
+                    if (imageElements.length > 0) {
+                        // Calculate the largest image size
+                        const largestImageArea = Math.max(...imageElements.map(item => item.area));
+                        
+                        // Only keep DIVs that are significantly larger than images
+                        window.metrics.lcs.elements = window.metrics.lcs.elements.filter(item => 
+                            item.element.tagName === 'IMG' || 
+                            item.area > largestImageArea * 1.5
+                        );
+                        
+                        // Recalculate last paint time if needed
+                        if (window.metrics.lcs.elements.length > 0) {
+                            window.metrics.lcs.lastPaintTime = Math.max(...window.metrics.lcs.elements.map(item => item.paintEvent.time));
+                        }
+                        
+                        console.log('Filtered LCS to prioritize images over container DIVs');
+                    }
+                }
+            }
+        }
+        
+        // Initialize both polyfill and native detection
+        function initAll() {
+            console.log('Initializing enhanced metrics system');
+            
+            // Initialize native detection regardless of browser
+            initNativeLCPDetection();
+            
+            // Set up monitoring for product images
+            if (document.readyState !== 'loading') {
+                monitorProductImages();
+                scanForLargeElements();
+            } else {
+                document.addEventListener('DOMContentLoaded', () => {
+                    monitorProductImages();
+                    scanForLargeElements();
+                });
+            }
+            
+            // Monitor after load
+            window.addEventListener('load', () => {
+                setTimeout(monitorProductImages, 100);
+                setTimeout(scanForLargeElements, 100);
+                
+                // Additional scan after layout is stable
+                setTimeout(() => {
+                    scanForLargeElements();
+                    
+                    // Filter large elements to prioritize content over containers
+                    filterLargeElements();
+                    
+                    // Trigger enhanced metrics display
+                    displayEnhancedMetrics();
+                }, 1000);
+            });
+            
+            // Listen for image loads
+            document.addEventListener('load', (event) => {
+                if (event.target.tagName === 'IMG') {
+                    trackElementPaint(event.target, { event: 'load-event-listener' });
+                }
+            }, true);
+            
+            // Schedule periodic scans
+            [200, 500, 1000, 2000].forEach(delay => {
+                setTimeout(() => {
+                    monitorProductImages();
+                    scanForLargeElements();
+                }, delay);
+            });
+            
+            // Final analysis and display update
+            setTimeout(() => {
+                console.log('--- Final Metrics Analysis ---');
+                console.log('Native LCP:', window.metrics.nativeLCP);
+                console.log('Custom LCP:', window.metrics.customLCP);
+                console.log('LCS:', {
+                    elements: window.metrics.lcs.elements.length,
+                    lastPaintTime: window.metrics.lcs.lastPaintTime,
+                    threshold: window.metrics.lcs.threshold
+                });
+                
+                // Filter large elements once more
+                filterLargeElements();
+                
+                // Force final metrics display
+                displayEnhancedMetrics();
+            }, 3000);
+        }
+        
+        // Always initialize our enhanced metrics
+        initAll();
+    }
+    </script>
     
     <!-- Initialize the application -->
     <script>
@@ -207,339 +1010,6 @@ isInViewport = (
             }
         }, 300); // Delay to ensure scripts are fully loaded
     });
-    
-/**
- * Final approach: Unified Timing LCP Implementation
- * This implementation uses a shared timing reference for all measurements
- * to ensure consistency between LCP and paint times
- */
-function initSafariLCPPolyfill() {
-    // Check if we need a polyfill (Safari)
-    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-    const needsPolyfill = isSafari && (!window.PerformanceObserver || 
-        (() => {
-            try {
-                const testObserver = new PerformanceObserver(() => {});
-                testObserver.observe({ type: 'largest-contentful-paint', buffered: true });
-                testObserver.disconnect();
-                return false; // No need for polyfill
-            } catch (e) {
-                return true; // Needs polyfill
-            }
-        })());
-    
-    if (needsPolyfill) {
-        console.log('Safari detected! Initializing unified timing LCP polyfill');
-        
-        // Create a global timing reference instead of using performance.now directly
-        // This ensures all timing mechanisms use the same reference point
-        const timingReference = {
-            // Store all paint events in a central location
-            paintEvents: {},
-            
-            // Function to get elapsed time from navigation start
-            getTime: function() {
-                return performance.now();
-            },
-            
-            // Record a paint event
-            recordPaint: function(elementId, type, metadata = {}) {
-                const time = this.getTime();
-                
-                if (!this.paintEvents[elementId]) {
-                    this.paintEvents[elementId] = [];
-                }
-                
-                const event = {
-                    time,
-                    type,
-                    ...metadata
-                };
-                
-                this.paintEvents[elementId].push(event);
-                console.log(`[${time.toFixed(2)}ms] Recorded ${type} for ${elementId}`, metadata);
-                
-                return time;
-            },
-            
-            // Get paint time for an element
-            getPaintTime: function(elementId, type = null) {
-                if (!this.paintEvents[elementId]) return null;
-                
-                if (type) {
-                    // Find specific type
-                    const event = this.paintEvents[elementId].find(e => e.type === type);
-                    return event ? event.time : null;
-                } else {
-                    // Get latest paint time
-                    const events = this.paintEvents[elementId];
-                    return events.length > 0 ? events[events.length - 1].time : null;
-                }
-            },
-            
-            // Get all paint events
-            getAllPaintEvents: function() {
-                return this.paintEvents;
-            }
-        };
-        
-        // Make the timing reference globally available
-        window.lcpTimingReference = timingReference;
-        
-        // ------ Modify the ImageLoader to use our unified timing ------
-        
-        // Store original monitorPaintTime function
-        const originalMonitorPaintTime = window.ImageLoader.prototype.monitorPaintTime;
-        
-        // Override the monitorPaintTime function to use our unified timing
-        window.ImageLoader.prototype.monitorPaintTime = function(img, index, loadTime, type = 'standard') {
-            // Call the original implementation
-            originalMonitorPaintTime.call(this, img, index, loadTime, type);
-            
-            // Add our unified timing implementation
-            const elementId = `img-${index}`;
-            
-            // Record the load time
-            timingReference.recordPaint(elementId, 'load', {
-                index,
-                loadTime,
-                type
-            });
-            
-            const originalWidth = img.offsetWidth;
-            const originalHeight = img.offsetHeight;
-            let paintDetected = false;
-            
-            const checkPaint = () => {
-                if (!paintDetected && (img.offsetWidth !== originalWidth || img.offsetHeight !== originalHeight || img.naturalWidth > 0)) {
-                    const paintTime = timingReference.recordPaint(elementId, 'paint', {
-                        index,
-                        originalWidth,
-                        originalHeight,
-                        newWidth: img.offsetWidth,
-                        newHeight: img.offsetHeight,
-                        naturalWidth: img.naturalWidth,
-                        naturalHeight: img.naturalHeight,
-                        type
-                    });
-                    
-                    paintDetected = true;
-                    
-                    // Use this paint event for LCP if applicable
-                    updateLCPIfLargest(img, paintTime);
-                    
-                    return;
-                }
-                
-                if (!paintDetected) {
-                    requestAnimationFrame(checkPaint);
-                }
-            };
-            
-            requestAnimationFrame(checkPaint);
-        };
-        
-        // ------ LCP Detection with unified timing ------
-        
-        // Store the largest element seen so far
-        let largestElement = null;
-        let largestSize = 0;
-        let largestTime = 0;
-        
-        // Function to check if an element is potentially the LCP
-        function updateLCPIfLargest(element, time = null) {
-            if (!element || !element.isConnected) return false;
-            
-            try {
-                // Get element dimensions
-                const rect = element.getBoundingClientRect();
-                const area = rect.width * rect.height;
-                
-                // Check if it's in viewport
-                const isInViewport = (
-                    rect.top < window.innerHeight &&
-                    rect.bottom > 0 &&
-                    rect.left < window.innerWidth &&
-                    rect.right > 0
-                );
-                
-                // For images, only consider if they're loaded
-                if (element.tagName === 'IMG' && (!element.complete || !element.naturalWidth)) {
-                    return false;
-                }
-                
-                // Only track elements that are in viewport and visible
-                if (isInViewport && area > largestSize) {
-                    // Use time parameter if provided, otherwise get current time
-                    const eventTime = time || timingReference.getTime();
-                    
-                    largestSize = area;
-                    largestElement = element;
-                    largestTime = eventTime;
-                    
-                    // Record element ID for tracking
-                    const elementId = element.dataset.index 
-                        ? `img-${element.dataset.index}`
-                        : `element-${Math.random().toString(36).substring(2, 9)}`;
-                    
-                    // Record this as an LCP event
-                    timingReference.recordPaint(elementId, 'lcp', {
-                        element: element.tagName,
-                        class: element.className,
-                        size: area,
-                        time: eventTime
-                    });
-                    
-                    // Update LCP metric
-                    if (window.pageMetricsTracker && window.pageMetricsTracker.metrics) {
-                        window.pageMetricsTracker.metrics.webVitals.lcp = {
-                            value: eventTime,
-                            element: element.tagName,
-                            elementId: element.id,
-                            elementClass: element.className,
-                            size: area,
-                            url: element.tagName === 'IMG' ? element.src : null,
-                            renderTime: eventTime,
-                            rating: window.pageMetricsTracker.getRating(eventTime, CONFIG.performance.lcp),
-                            method: 'unified-timing'
-                        };
-                        
-                        window.pageMetricsTracker.displayMetrics();
-                    }
-                    
-                    console.log(`[${eventTime.toFixed(2)}ms] New LCP: ${element.tagName}${element.className ? '.' + element.className.replace(/\s+/g, '.') : ''} (${area} pixels)`);
-                    return true;
-                }
-                
-                return false;
-            } catch (e) {
-                console.error('Error in updateLCPIfLargest:', e);
-                return false;
-            }
-        }
-        
-        // Function to scan the document for potential LCP elements
-        function scanForLargestElement() {
-            // Prioritize checking product images first
-            const productImgs = Array.from(document.querySelectorAll('.product-image'));
-            const otherImgs = Array.from(document.querySelectorAll('img:not(.product-image)'));
-            const headings = Array.from(document.querySelectorAll('h1, h2'));
-            const containers = Array.from(document.querySelectorAll('.product-item, main, article'));
-            
-            // Combined list prioritizing images
-            const candidates = [...productImgs, ...otherImgs, ...headings, ...containers];
-            
-            // Check each candidate
-            let updated = false;
-            candidates.forEach(element => {
-                if (updateLCPIfLargest(element)) {
-                    updated = true;
-                }
-            });
-            
-            return updated;
-        }
-        
-        // Check immediately
-        setTimeout(scanForLargestElement, 0);
-        
-        // Set up checks after DOM and images load
-        document.addEventListener('DOMContentLoaded', () => {
-            setTimeout(scanForLargestElement, 50);
-        });
-        
-        window.addEventListener('load', () => {
-            setTimeout(scanForLargestElement, 100);
-            setTimeout(scanForLargestElement, 500);
-        });
-        
-        // Listen for image loads to update LCP
-        document.addEventListener('load', (event) => {
-            if (event.target.tagName === 'IMG') {
-                setTimeout(() => {
-                    updateLCPIfLargest(event.target);
-                }, 50);
-            }
-        }, true);
-        
-        // Do periodic scans for late-loading content
-        [200, 500, 1000, 2000].forEach(delay => {
-            setTimeout(scanForLargestElement, delay);
-        });
-        
-        // Create special monitor for product images
-        function monitorProductImages() {
-            document.querySelectorAll('.product-image').forEach(img => {
-                if (img.dataset.lcpMonitored) return;
-                img.dataset.lcpMonitored = true;
-                
-                const elementId = `img-${img.dataset.index}`;
-                
-                // Function to check for paint
-                function checkImagePaint() {
-                    if (img.complete && img.naturalWidth > 0) {
-                        const time = timingReference.recordPaint(elementId, 'product-paint', {
-                            index: img.dataset.index,
-                            width: img.width,
-                            height: img.height,
-                            natural: `${img.naturalWidth}x${img.naturalHeight}`
-                        });
-                        
-                        // Update LCP if this is largest
-                        updateLCPIfLargest(img, time);
-                    } else {
-                        // Check again in next frame
-                        requestAnimationFrame(checkImagePaint);
-                    }
-                }
-                
-                // Start monitoring
-                if (img.complete) {
-                    checkImagePaint();
-                } else {
-                    img.addEventListener('load', checkImagePaint);
-                }
-            });
-        }
-        
-        // Set up product image monitoring
-        if (document.readyState !== 'loading') {
-            monitorProductImages();
-        } else {
-            document.addEventListener('DOMContentLoaded', monitorProductImages);
-        }
-        
-        // Also monitor after load
-        window.addEventListener('load', monitorProductImages);
-        
-        // Add a final analysis after all checks
-        setTimeout(() => {
-            console.log('--- Final LCP Analysis ---');
-            console.log('Largest Element:', largestElement ? {
-                tagName: largestElement.tagName,
-                className: largestElement.className,
-                size: largestSize,
-                time: largestTime.toFixed(2) + 'ms'
-            } : 'None found');
-            
-            console.log('All paint events:', timingReference.getAllPaintEvents());
-            
-            // Display unified timing data in page for debugging
-            if (window.pageMetricsTracker && window.pageMetricsTracker.metrics) {
-                const lcpInfo = window.pageMetricsTracker.metrics.webVitals.lcp;
-                if (lcpInfo) {
-                    lcpInfo.debug = {
-                        usedUnifiedTiming: true,
-                        paintEvents: timingReference.getAllPaintEvents()
-                    };
-                    
-                    // Update display
-                    window.pageMetricsTracker.displayMetrics();
-                }
-            }
-        }, 3000);
-    }
-}
     </script>
 </body>
 </html>

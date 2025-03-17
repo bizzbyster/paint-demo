@@ -212,6 +212,14 @@ window.PageMetricsTracker = class PageMetricsTracker {
                         rating: this.getRating(lastEntry.startTime, CONFIG.performance.lcp)
                     };
                     
+                    // Store native LCP in window.metrics for comparison
+                    if (window.metrics) {
+                        window.metrics.nativeLCP = { 
+                            ...this.metrics.webVitals.lcp,
+                            method: 'native-api'
+                        };
+                    }
+                    
                     this.displayMetrics();
                 });
                 
@@ -306,6 +314,14 @@ window.PageMetricsTracker = class PageMetricsTracker {
                             rating: this.getRating(now, CONFIG.performance.lcp),
                             method: 'fallback'
                         };
+                        
+                        // Also store in window.metrics for comparison if available
+                        if (window.metrics) {
+                            window.metrics.nativeLCP = { 
+                                ...this.metrics.webVitals.lcp,
+                                method: 'fallback'
+                            };
+                        }
                         
                         console.log('Fallback LCP detected:', this.metrics.webVitals.lcp);
                         this.displayMetrics();
