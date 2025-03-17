@@ -81,13 +81,18 @@ window.ImageLoader = class ImageLoader {
                 const viewportTime = getRelativeTime() - this.timingData.startTime;
                 const statusBadge = img.parentNode.querySelector('.status-badge');
                 
-                // Update status badge - completely remove and re-add classes
+                // Debug log for intersection events
+                console.log(`Intersection event for image ${index}:`, {
+                    isIntersecting: entry.isIntersecting,
+                    intersectionRatio: entry.intersectionRatio.toFixed(2)
+                });
+                
+                // Update status badge - explicitly remove and add classes
                 if (statusBadge) {
-                    // First remove all viewport-related classes
+                    // Remove existing classes
                     statusBadge.classList.remove('in-viewport');
                     statusBadge.classList.remove('out-viewport');
                     
-                    // Then add the appropriate class and set text
                     if (entry.isIntersecting) {
                         statusBadge.textContent = "In Viewport";
                         statusBadge.classList.add('in-viewport');
@@ -95,6 +100,9 @@ window.ImageLoader = class ImageLoader {
                         statusBadge.textContent = "Out of Viewport";
                         statusBadge.classList.add('out-viewport');
                     }
+                    
+                    // Force style recalculation
+                    void statusBadge.offsetWidth;
                 }
                 
                 // Record viewport entry time
@@ -110,8 +118,8 @@ window.ImageLoader = class ImageLoader {
                 }
             });
         }, {
-            threshold: [0, 0.5],
-            rootMargin: "0px"
+            threshold: [0, 0.1], // More sensitive to small changes
+            rootMargin: "0px"    // No margin, exact viewport edges
         });
     }
     
@@ -126,7 +134,7 @@ window.ImageLoader = class ImageLoader {
         const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
         const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
         
-        // Check if the element is at least partially in the viewport
+        // Check if at least part of the element is in the viewport
         const isInViewport = (
             rect.top < viewportHeight &&
             rect.bottom > 0 &&
@@ -139,9 +147,8 @@ window.ImageLoader = class ImageLoader {
         
         // Update the status badge explicitly
         if (statusBadge) {
-            // First remove all viewport-related classes
-            statusBadge.classList.remove('in-viewport');
-            statusBadge.classList.remove('out-viewport');
+            // First completely reset the styling
+            statusBadge.className = 'status-badge';
             
             // Then add the appropriate class and set text
             if (isInViewport) {
@@ -151,6 +158,28 @@ window.ImageLoader = class ImageLoader {
                 statusBadge.textContent = "Out of Viewport";
                 statusBadge.classList.add('out-viewport');
             }
+            
+            // Force style recalculation to ensure changes take effect
+            void statusBadge.offsetWidth;
+            
+            // Double-check the applied classes (for debugging)
+            const hasInViewport = statusBadge.classList.contains('in-viewport');
+            const hasOutViewport = statusBadge.classList.contains('out-viewport');
+            
+            console.log(`Image ${element.dataset.index} status badge:`, {
+                text: statusBadge.textContent,
+                hasInViewportClass: hasInViewport,
+                hasOutViewportClass: hasOutViewport,
+                isInViewport: isInViewport,
+                elementPosition: {
+                    top: Math.round(rect.top),
+                    bottom: Math.round(rect.bottom),
+                    height: Math.round(rect.height)
+                },
+                viewport: {
+                    height: viewportHeight
+                }
+            });
         }
         
         // Record viewport entry if in viewport
@@ -163,12 +192,46 @@ window.ImageLoader = class ImageLoader {
                 this.timingData.viewportDeltas.push({
                     imageIndex: index,
                     viewportTime: viewportTime,
-                    intersectionRatio: 0.5 // Estimated partial visibility
+                    intersectionRatio: 0.5 // Estimate
                 });
             }
         }
         
         return isInViewport;
+    }
+    
+    /**
+     * Update the window resize listener to immediately recheck viewport status
+     */
+    setupWindowResizeListener() {
+        // Remove any existing listener
+        window.removeEventListener('resize', this._resizeHandler);
+        
+        // Create a debounced resize handler
+        this._resizeHandler = this.debounce(() => {
+            console.log('Window resized, rechecking viewport status');
+            document.querySelectorAll('.product-image').forEach(img => {
+                this.checkInitialViewportStatus(img);
+            });
+        }, 100); // 100ms debounce delay
+        
+        // Add the listener
+        window.addEventListener('resize', this._resizeHandler);
+    }
+    
+    /**
+     * Utility to prevent multiple rapid calls
+     */
+    debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
     }
     
     /**
@@ -571,6 +634,9 @@ window.ImageLoader = class ImageLoader {
         // Initialize viewport observer
         this.initViewportObserver();
         
+        // Set up window resize listener
+        this.setupWindowResizeListener();
+        
         // Create and append product items
         CONFIG.products.forEach((product, index) => {
             const productDiv = this.createProductHTML(product, index, sizeValue, loadType);
@@ -586,6 +652,13 @@ window.ImageLoader = class ImageLoader {
         
         // Set up performance observers
         this.setupPerformanceObservers();
+        
+        // Add a small delay then recheck all images in case initial detection was incorrect
+        setTimeout(() => {
+            document.querySelectorAll('.product-image').forEach(img => {
+                this.checkInitialViewportStatus(img);
+            });
+        }, 200);
     }
     
     /**
