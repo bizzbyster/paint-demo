@@ -332,4 +332,4 @@ window.DisplayManager = class DisplayManager {
         // Update the results element
         this.resultsContainer.innerHTML = resultsHTML;
     }
-};
+}; 

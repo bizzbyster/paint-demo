@@ -674,4 +674,4 @@ window.ImageLoader = class ImageLoader {
             viewportDeltas: this.timingData.viewportDeltas
         });
     }
-};
+}; 
