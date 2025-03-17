@@ -174,9 +174,12 @@ window.PageMetricsTracker = class PageMetricsTracker {
     observeLargestContentfulPaint() {
         if ('PerformanceObserver' in window) {
             try {
+                // First try the standard approach for Chrome/Firefox
                 const lcpObserver = new PerformanceObserver((entryList) => {
                     const entries = entryList.getEntries();
                     const lastEntry = entries[entries.length - 1];
+                    
+                    if (!lastEntry) return;
                     
                     // Skip entries with unusually large times (likely errors)
                     if (lastEntry.startTime > 30000) {
@@ -212,15 +215,137 @@ window.PageMetricsTracker = class PageMetricsTracker {
                     this.displayMetrics();
                 });
                 
-                lcpObserver.observe({ entryTypes: ['largest-contentful-paint'] });
-                this.observers.push(lcpObserver);
+                // Use the recommended buffered flag for more reliable detection
+                try {
+                    lcpObserver.observe({ 
+                        type: 'largest-contentful-paint', 
+                        buffered: true 
+                    });
+                    this.observers.push(lcpObserver);
+                } catch (err) {
+                    // Fallback to older syntax for Safari
+                    console.log('Using fallback LCP observer approach');
+                    lcpObserver.observe({ entryTypes: ['largest-contentful-paint'] });
+                    this.observers.push(lcpObserver);
+                }
                 
-                // LCP is finalized when the page's lifecycle state changes to hidden
-                // Note: This is now handled in setupVisibilityChangeListener()
+                // For Safari, add a fallback approach using element timing and load events
+                const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+                if (isSafari) {
+                    console.log('Safari detected, adding fallback LCP detection mechanism');
+                    this.initLCPFallback();
+                }
             } catch (e) {
-                console.warn('LCP observer not supported', e);
+                console.warn('LCP observer not supported, using fallback', e);
+                // Add fallback for Safari or other browsers without LCP support
+                this.initLCPFallback();
             }
+        } else {
+            console.warn('PerformanceObserver not supported, using fallback');
+            this.initLCPFallback();
         }
+    }
+    
+    /**
+     * Initialize fallback mechanisms for LCP in Safari or other browsers
+     * that don't support the standard API
+     */
+    initLCPFallback() {
+        console.log('Initializing LCP fallback detection');
+        
+        // We'll track large elements as they load and become visible
+        let largestElement = null;
+        let largestSize = 0;
+        
+        // Function to check if an element is potentially the LCP
+        const checkForLargestElement = () => {
+            // Check large visible elements - common LCP candidates
+            const candidates = [
+                ...Array.from(document.querySelectorAll('img')),
+                ...Array.from(document.querySelectorAll('.product-image')),
+                ...Array.from(document.querySelectorAll('h1')),
+                ...Array.from(document.querySelectorAll('video')),
+                ...Array.from(document.querySelectorAll('.product-item')),
+            ];
+            
+            candidates.forEach(el => {
+                if (!el.isConnected) return;
+                
+                // Get element dimensions
+                const rect = el.getBoundingClientRect();
+                const area = rect.width * rect.height;
+                
+                // Check if it's in viewport
+                const isInViewport = (
+                    rect.top < window.innerHeight &&
+                    rect.bottom > 0 &&
+                    rect.left < window.innerWidth &&
+                    rect.right > 0
+                );
+                
+                // For images, only consider if they're loaded
+                if (el.tagName === 'IMG' && (!el.complete || !el.naturalWidth)) {
+                    return;
+                }
+                
+                // Only track elements that are in viewport and visible
+                if (isInViewport && area > largestSize) {
+                    largestSize = area;
+                    largestElement = el;
+                    
+                    // Record as potential LCP if not already set
+                    if (!this.metrics.webVitals.lcp || this.metrics.webVitals.lcp.element === 'unknown') {
+                        const now = performance.now();
+                        this.metrics.webVitals.lcp = {
+                            value: now,
+                            element: el.tagName,
+                            elementId: el.id,
+                            elementClass: el.className,
+                            size: area,
+                            renderTime: now,
+                            rating: this.getRating(now, CONFIG.performance.lcp),
+                            method: 'fallback'
+                        };
+                        
+                        console.log('Fallback LCP detected:', this.metrics.webVitals.lcp);
+                        this.displayMetrics();
+                    }
+                }
+            });
+        };
+        
+        // Check for largest element once DOM is interactive
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            setTimeout(checkForLargestElement, 500);
+        } else {
+            document.addEventListener('DOMContentLoaded', () => {
+                setTimeout(checkForLargestElement, 500);
+            });
+        }
+        
+        // Check again after images have loaded
+        window.addEventListener('load', () => {
+            setTimeout(checkForLargestElement, 1000);
+        });
+        
+        // Listen for image loads to update LCP
+        document.addEventListener('load', (event) => {
+            if (event.target.tagName === 'IMG') {
+                setTimeout(checkForLargestElement, 100);
+            }
+        }, true);
+        
+        // Set up a periodic check to catch late-loading content
+        let checkCount = 0;
+        const maxChecks = 5;
+        const checkInterval = setInterval(() => {
+            checkForLargestElement();
+            checkCount++;
+            
+            if (checkCount >= maxChecks) {
+                clearInterval(checkInterval);
+            }
+        }, 1000);
     }
     
     /**
@@ -301,6 +426,7 @@ window.PageMetricsTracker = class PageMetricsTracker {
                         ${lcp.url ? 'URL: ' + lcp.url + '<br>' : ''}
                         ${lcp.loadTime ? 'Load Time: ' + lcp.loadTime.toFixed(2) + ' ms<br>' : ''}
                         ${lcp.renderTime ? 'Render Time: ' + lcp.renderTime.toFixed(2) + ' ms' : ''}
+                        ${lcp.method ? '<br>Detection method: ' + lcp.method : ''}
                     </td>
                 </tr>
             `;

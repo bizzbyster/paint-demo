@@ -42,24 +42,44 @@
     </div>
     
     <div class="info-section">
-        <h3>Understanding Load vs. Paint Times</h3>
-        <p><strong>Load Time:</strong> When the browser finishes downloading the image data and fires the JavaScript <code>load</code> event.</p>
-        <p><strong>Paint Time:</strong> When the browser actually renders the image visibly on screen.</p>
-        <p><strong>InViewport:</strong> When the image enters the user's viewport (visible area of the page).</p>
-        <p>These times can differ because:</p>
-        <ul>
-            <li>The browser might batch rendering updates for performance</li>
-            <li>The browser needs to decode image data after loading</li>
-            <li>Other JavaScript might be blocking the main thread</li>
-            <li>Layout and style calculations need to be performed</li>
-            <li>Images might be outside the viewport when loaded</li>
-        </ul>
-        
-        <h3>Page Performance Metrics</h3>
+        <h3>Viewport Detection Debug</h3>
+        <p>This section displays real-time viewport detection data to help debug across different devices.</p>
+        <div id="viewport-debug">
+            <div>
+                <h4>Device Information</h4>
+                <pre id="device-info">Loading device info...</pre>
+            </div>
+            <div>
+                <h4>Viewport Dimensions</h4>
+                <pre id="viewport-dimensions">Loading viewport dimensions...</pre>
+            </div>
+            <div>
+                <h4>Element Position Data</h4>
+                <pre id="element-positions">No elements tracked yet</pre>
+            </div>
+            <div>
+                <h4>IntersectionObserver Events</h4>
+                <pre id="intersection-events">No intersection events yet</pre>
+            </div>
+        </div>
+        <button id="refresh-debug">Refresh Debug Data</button>
+    </div>
+    
+    <div class="info-section">
+        <h3>About Page Performance</h3>
         <p><strong>First Contentful Paint (FCP):</strong> Marks when the first text or image is painted.</p>
         <p><strong>Largest Contentful Paint (LCP):</strong> Marks when the largest content element is painted.</p>
-        <p><strong>Time to Interactive (TTI):</strong> When the page is fully interactive.</p>
-        <p><strong>Navigation Timing API:</strong> Provides detailed timing information about the page load process.</p>
+        <p><strong>Safari Compatibility:</strong> LCP doesn't work natively in Safari, so we use a fallback detection mechanism.</p>
+        <p><strong>InViewport Logic:</strong> We use these calculations to determine if an element is in the viewport:</p>
+        <pre>
+// Check if element is in viewport
+isInViewport = (
+    rect.top < viewportHeight &&  // Element's top edge is above the bottom of viewport
+    rect.bottom > 0 &&            // Element's bottom edge is below the top of viewport
+    rect.left < viewportWidth &&  // Element's left edge is before right edge of viewport
+    rect.right > 0                // Element's right edge is after left edge of viewport
+);
+        </pre>
     </div>
     
     <!-- Configuration -->
@@ -111,12 +131,6 @@
                 fast: 50,
                 slow: 300
             }
-        },
-        
-        // IntersectionObserver configuration
-        observer: {
-            threshold: 0.1,
-            rootMargin: "0px"
         }
     };
     </script>
@@ -124,12 +138,16 @@
     <!-- Load the modules -->
     <script src="metrics.js"></script>
     <script src="imageLoader.js"></script>
+    <script src="display.js"></script>
     
     <!-- Initialize the application -->
     <script>
     document.addEventListener('DOMContentLoaded', function() {
         // Wait slightly to ensure scripts are loaded
         setTimeout(function() {
+            // Initialize Safari LCP polyfill
+            initSafariLCPPolyfill();
+            
             // Initialize page metrics tracking
             if (window.PageMetricsTracker) {
                 window.pageMetricsTracker = new window.PageMetricsTracker();
@@ -142,7 +160,12 @@
             if (window.ImageLoader) {
                 const imageLoader = new window.ImageLoader();
                 
-                // Event listener for the consolidated test button
+                // Initialize display manager
+                if (window.DisplayManager) {
+                    window.displayManager = new window.DisplayManager(imageLoader);
+                }
+                
+                // Event listener for the test button
                 const runTestButton = document.getElementById('run-test');
                 if (runTestButton) {
                     runTestButton.addEventListener('click', () => {
@@ -176,11 +199,97 @@
                 
                 // Initial load
                 imageLoader.loadImages();
+                
+                // Export for console debugging
+                window.debugImageLoader = imageLoader;
             } else {
                 console.error("ImageLoader not found! Check that imageLoader.js is loaded correctly.");
             }
         }, 300); // Delay to ensure scripts are fully loaded
     });
+    
+    /**
+     * Safari LCP Polyfill
+     * This provides basic LCP functionality for browsers that don't support it natively
+     */
+    function initSafariLCPPolyfill() {
+        // Check if we need a polyfill (Safari)
+        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        const needsPolyfill = isSafari && (!window.PerformanceObserver || 
+            (() => {
+                try {
+                    const testObserver = new PerformanceObserver(() => {});
+                    testObserver.observe({ type: 'largest-contentful-paint', buffered: true });
+                    testObserver.disconnect();
+                    return false; // No need for polyfill
+                } catch (e) {
+                    return true; // Needs polyfill
+                }
+            })());
+        
+        if (needsPolyfill) {
+            console.log('Safari detected! Initializing LCP polyfill');
+            
+            // Store the largest element seen so far
+            let largestElement = null;
+            let largestSize = 0;
+            
+            // Function to check if an element is larger than the current largest
+            function checkElementSize(element) {
+                if (!element) return;
+                
+                const rect = element.getBoundingClientRect();
+                const size = rect.width * rect.height;
+                
+                if (size > largestSize) {
+                    largestSize = size;
+                    largestElement = element;
+                    
+                    // Update LCP data
+                    if (window.pageMetricsTracker && window.pageMetricsTracker.metrics) {
+                        window.pageMetricsTracker.metrics.webVitals.lcp = {
+                            value: performance.now(),
+                            element: element.tagName,
+                            elementId: element.id,
+                            elementClass: element.className,
+                            size: size,
+                            renderTime: performance.now(),
+                            rating: window.pageMetricsTracker.getRating(performance.now(), CONFIG.performance.lcp),
+                            method: 'safari-polyfill'
+                        };
+                        
+                        window.pageMetricsTracker.displayMetrics();
+                    }
+                }
+            }
+            
+            // Monitor image loads
+            window.addEventListener('load', () => {
+                // Check all images after page load
+                setTimeout(() => {
+                    document.querySelectorAll('img').forEach(img => {
+                        if (img.complete) {
+                            checkElementSize(img);
+                        }
+                    });
+                    
+                    // Also check large text elements
+                    document.querySelectorAll('h1, h2, .product-info').forEach(el => {
+                        checkElementSize(el);
+                    });
+                    
+                    console.log('Safari LCP polyfill: largest element', largestElement);
+                }, 500);
+            });
+            
+            // Listen for image load events
+            document.addEventListener('load', (event) => {
+                if (event.target.tagName === 'IMG') {
+                    checkElementSize(event.target);
+                }
+            }, true);
+        }
+    }
     </script>
 </body>
 </html>

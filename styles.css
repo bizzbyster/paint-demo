@@ -6,6 +6,46 @@ body {
     color: #333;
 }
 
+/* Debug panel styles */
+#viewport-debug {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+#viewport-debug h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    color: #2980b9;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+}
+
+#viewport-debug pre {
+    background-color: #f8f9fa;
+    padding: 10px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+#refresh-debug {
+    background-color: #2980b9;
+    margin-bottom: 15px;
+}
+
+.debug-highlight {
+    background-color: #ffeaa7;
+    padding: 2px;
+    border-radius: 2px;
+}
+
 .product-container {
     display: flex;
     justify-content: space-between;
@@ -24,11 +64,18 @@ body {
     position: relative;
 }
 
+/* Enhanced product image with debug outline */
 .product-image {
     width: 100%;
     height: 200px;
     object-fit: cover;
     display: block;
+    transition: outline 0.3s ease;
+}
+
+/* Debug highlight for images being tracked */
+.product-image.debug-tracked {
+    outline: 3px solid rgba(41, 128, 185, 0.5);
 }
 
 .product-info {
@@ -129,6 +176,7 @@ th {
     border-left: 4px solid #2980b9;
 }
 
+/* Enhanced status badge with more info */
 .status-badge {
     position: absolute;
     top: 10px;
@@ -139,6 +187,16 @@ th {
     font-weight: bold;
     color: white;
     background-color: rgba(0, 0, 0, 0.6);
+    max-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: all 0.3s ease;
+}
+
+.status-badge:hover {
+    max-width: 200px;
+    z-index: 10;
 }
 
 .in-viewport {
@@ -159,4 +217,35 @@ th {
 
 .metric-poor {
     color: #e74c3c;
+}
+
+/* Make tables in debug panel more compact */
+#viewport-debug table {
+    font-size: 12px;
+}
+
+#viewport-debug table th,
+#viewport-debug table td {
+    padding: 4px 8px;
+}
+
+/* Responsive adjustments for small screens */
+@media (max-width: 768px) {
+    .product-item {
+        max-width: 100%;
+    }
+    
+    #viewport-debug {
+        grid-template-columns: 1fr;
+    }
+    
+    .controls {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .controls select,
+    .controls button {
+        margin-bottom: 10px;
+    }
 }
