@@ -974,72 +974,71 @@ function updateLCS(element, paintEvent) {
     </script>
     
     <!-- Initialize the application -->
-    <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Wait slightly to ensure scripts are loaded
-        setTimeout(function() {
-            // Initialize Safari LCP polyfill
-            initSafariLCPPolyfill();
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Wait slightly to ensure scripts are loaded
+    setTimeout(function() {
+        // Initialize Safari LCP polyfill
+        initSafariLCPPolyfill();
+        
+        // Initialize page metrics tracking
+        if (window.PerformanceMetricsTracker) {
+            window.pageMetricsTracker = new window.PerformanceMetricsTracker();
+            window.pageMetricsTracker.init();
+        } else {
+            console.error("PerformanceMetricsTracker not found! Check that metrics-tracker.js is loaded correctly.");
+        }
+        
+        // Create image loader instance
+        if (window.ImageLoader) {
+            const imageLoader = new window.ImageLoader(window.pageMetricsTracker);
             
-            // Initialize page metrics tracking
-            if (window.PageMetricsTracker) {
-                window.pageMetricsTracker = new window.PageMetricsTracker();
-                window.pageMetricsTracker.init();
-            } else {
-                console.error("PageMetricsTracker not found! Check that metrics.js is loaded correctly.");
+            // Initialize display manager
+            if (window.DisplayManager) {
+                window.displayManager = new window.DisplayManager(window.pageMetricsTracker, imageLoader);
             }
             
-            // Create image loader instance
-            if (window.ImageLoader) {
-                const imageLoader = new window.ImageLoader();
-                
-                // Initialize display manager
-                if (window.DisplayManager) {
-                    window.displayManager = new window.DisplayManager(imageLoader);
-                }
-                
-                // Event listener for the test button
-                const runTestButton = document.getElementById('run-test');
-                if (runTestButton) {
-                    runTestButton.addEventListener('click', () => {
-                        // Store current settings in session storage to preserve them
-                        const imageSize = document.getElementById('image-size').value || 'medium';
-                        const imageType = document.getElementById('image-type').value || 'standard';
-                        
-                        sessionStorage.setItem('savedImageSize', imageSize);
-                        sessionStorage.setItem('savedImageType', imageType);
-                        
-                        // Force a complete page reload, bypassing the cache
-                        window.location.reload(true);
-                    });
-                }
-                
-                // Check for saved settings from previous session
-                const savedSize = sessionStorage.getItem('savedImageSize');
-                const savedType = sessionStorage.getItem('savedImageType');
-                
-                if (savedSize && document.getElementById('image-size')) {
-                    document.getElementById('image-size').value = savedSize;
-                }
-                
-                if (savedType && document.getElementById('image-type')) {
-                    document.getElementById('image-type').value = savedType;
-                }
-                
-                // Clear saved settings now that we've used them
-                sessionStorage.removeItem('savedImageSize');
-                sessionStorage.removeItem('savedImageType');
-                
-                // Initial load
-                imageLoader.loadImages();
-                
-                // Export for console debugging
-                window.debugImageLoader = imageLoader;
-            } else {
-                console.error("ImageLoader not found! Check that imageLoader.js is loaded correctly.");
+            // Event listener for the test button - UPDATED FOR DIRECT PAGE RELOAD
+            const runTestButton = document.getElementById('run-test');
+            if (runTestButton) {
+                runTestButton.addEventListener('click', () => {
+                    // Get current settings
+                    const imageSize = document.getElementById('image-size').value || 'medium';
+                    const imageType = document.getElementById('image-type').value || 'standard';
+                    
+                    // Build URL with query parameters
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('imageSize', imageSize);
+                    url.searchParams.set('imageType', imageType);
+                    
+                    // Force a complete page reload with the parameters
+                    window.location.href = url.toString();
+                });
             }
-        }, 300); // Delay to ensure scripts are fully loaded
-    });
-    </script>
+            
+            // Check URL parameters for settings
+            const urlParams = new URLSearchParams(window.location.search);
+            const sizeParam = urlParams.get('imageSize');
+            const typeParam = urlParams.get('imageType');
+            
+            if (sizeParam && document.getElementById('image-size')) {
+                document.getElementById('image-size').value = sizeParam;
+            }
+            
+            if (typeParam && document.getElementById('image-type')) {
+                document.getElementById('image-type').value = typeParam;
+            }
+            
+            // Initial load
+            imageLoader.loadImages();
+            
+            // Export for console debugging
+            window.debugImageLoader = imageLoader;
+        } else {
+            console.error("ImageLoader not found! Check that image-loader.js is loaded correctly.");
+        }
+    }, 300); // Delay to ensure scripts are fully loaded
+});
+</script>
 </body>
 </html>
