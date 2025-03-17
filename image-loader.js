@@ -1,35 +1,12 @@
 /**
- * Get the navigation start time from Performance API
- * This will serve as the reference point for all our measurements
+ * Consolidated Image Loader Module
+ * Combines image loading and viewport tracking functionality
  */
-function getNavigationStartTime() {
-    if (performance.timeOrigin) {
-        // Modern browsers
-        return performance.timeOrigin;
-    } else if (performance.timing && performance.timing.navigationStart) {
-        // Older browsers
-        return performance.timing.navigationStart;
-    }
-    // Fallback to current time minus a small offset
-    return Date.now() - 100;
-}
-
-/**
- * Get current time relative to navigation start
- * This aligns our measurements with browser metrics like LCP
- */
-function getRelativeTime() {
-    return performance.now() + window.navigationStartTime;
-}
-
-// Store navigation start time when the script loads
-window.navigationStartTime = getNavigationStartTime();
-
-/**
- * Image Loader Module with navigation-aligned timing
- */
-window.ImageLoader = class ImageLoader {
-    constructor() {
+class ImageLoader {
+    constructor(metricsTracker) {
+        // Store reference to metrics tracker
+        this.metricsTracker = metricsTracker;
+        
         // DOM references
         this.productContainer = document.getElementById('product-container');
         this.results = document.getElementById('results');
@@ -39,32 +16,34 @@ window.ImageLoader = class ImageLoader {
         // Timings storage
         this.timingData = {
             startTime: 0,
-            navigationStartTime: window.navigationStartTime,
             imageLoadTimes: [],
-            elementTimings: [],
             paintDeltas: [],
             viewportDeltas: []
         };
         
-        // IntersectionObserver for viewport detection
+        // Viewport tracking
         this.viewportObserver = null;
-        
-        // Storage for intersection events log
         this.intersectionLog = [];
         
-        // Event emitter for displaying results
-        this.events = {
-            callbacks: {},
-            on(event, callback) {
-                if (!this.callbacks[event]) this.callbacks[event] = [];
-                this.callbacks[event].push(callback);
-            },
-            emit(event, data) {
-                if (this.callbacks[event]) {
-                    this.callbacks[event].forEach(callback => callback(data));
-                }
-            }
-        };
+        // Event system
+        this.callbacks = {};
+    }
+    
+    /**
+     * Register event listeners
+     */
+    on(event, callback) {
+        if (!this.callbacks[event]) this.callbacks[event] = [];
+        this.callbacks[event].push(callback);
+    }
+    
+    /**
+     * Emit events to listeners
+     */
+    emit(event, data) {
+        if (this.callbacks[event]) {
+            this.callbacks[event].forEach(callback => callback(data));
+        }
     }
     
     /**
@@ -90,15 +69,15 @@ window.ImageLoader = class ImageLoader {
             entries.forEach(entry => {
                 const img = entry.target;
                 const index = parseInt(img.dataset.index);
-                const viewportTime = getRelativeTime() - this.timingData.startTime;
+                const viewportTime = performance.now() - this.timingData.startTime;
                 const statusBadge = img.parentNode.querySelector('.status-badge');
                 
                 // Calculate visible percentage
                 let visiblePercent = Math.round(entry.intersectionRatio * 100);
                 
-                // Log the entry for debugging with navigation-relative time
+                // Log the intersection event
                 const entryDebugInfo = {
-                    timeMs: viewportTime.toFixed(2), // Time since navigation start in ms
+                    timeMs: viewportTime.toFixed(2),
                     imageIndex: index,
                     isIntersecting: entry.isIntersecting,
                     intersectionRatio: entry.intersectionRatio,
@@ -118,7 +97,7 @@ window.ImageLoader = class ImageLoader {
                 this.intersectionLog.unshift(entryDebugInfo);
                 if (this.intersectionLog.length > 20) this.intersectionLog.pop();
                 
-                this.events.emit('intersectionUpdate', {
+                this.emit('intersectionUpdate', {
                     logs: this.intersectionLog.slice(0, 3),
                     currentEntry: entryDebugInfo
                 });
@@ -154,7 +133,7 @@ window.ImageLoader = class ImageLoader {
     /**
      * Check if an element is in the viewport and update status
      */
-    checkInitialViewportStatus(element) {
+    checkViewportStatus(element) {
         const rect = element.getBoundingClientRect();
         const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
         const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
@@ -175,8 +154,8 @@ window.ImageLoader = class ImageLoader {
             visiblePercent = Math.round((visibleHeight * visibleWidth) / (rect.width * rect.height) * 100);
         }
         
-        // Capture the time since navigation start
-        const viewportTime = getRelativeTime() - this.timingData.startTime;
+        // Capture the time since start
+        const viewportTime = performance.now() - this.timingData.startTime;
         
         // Update status badge
         const statusBadge = element.parentNode.querySelector('.status-badge');
@@ -192,7 +171,7 @@ window.ImageLoader = class ImageLoader {
             }
         }
         
-        // Create debug info with navigation-relative time
+        // Create debug info
         const debugInfo = {
             timeMs: viewportTime.toFixed(2),
             index: element.dataset.index,
@@ -207,20 +186,14 @@ window.ImageLoader = class ImageLoader {
             viewport: {
                 width: viewportWidth,
                 height: viewportHeight
-            },
-            calculation: {
-                topTest: rect.top < viewportHeight,
-                bottomTest: rect.bottom > 0,
-                leftTest: rect.left < viewportWidth,
-                rightTest: rect.right > 0
             }
         };
         
         // Log with consistent time format
-        console.log(`Initial check - Image ${element.dataset.index}: ${isInViewport ? 'In' : 'Out of'} viewport at ${viewportTime.toFixed(2)}ms, Visible: ${visiblePercent}%`);
+        console.log(`Check - Image ${element.dataset.index}: ${isInViewport ? 'In' : 'Out of'} viewport at ${viewportTime.toFixed(2)}ms, Visible: ${visiblePercent}%`);
         
         // Emit debug info for UI updates
-        this.events.emit('viewportUpdate', debugInfo);
+        this.emit('viewportUpdate', debugInfo);
         
         // Record viewport entry if in viewport
         if (isInViewport) {
@@ -239,30 +212,14 @@ window.ImageLoader = class ImageLoader {
     }
     
     /**
-     * Check if LCP is supported
-     */
-    checkLCPSupport() {
-        if (!window.PerformanceObserver) return false;
-        
-        try {
-            const testObserver = new PerformanceObserver(() => {});
-            testObserver.observe({ type: 'largest-contentful-paint', buffered: true });
-            testObserver.disconnect();
-            return true;
-        } catch (e) {
-            return false;
-        }
-    }
-    
-    /**
-     * Monitor window resize events
+     * Set up window resize listener
      */
     setupWindowResizeListener() {
         window.removeEventListener('resize', this._resizeHandler);
         
         this._resizeHandler = this.debounce(() => {
             document.querySelectorAll('.product-image').forEach(img => {
-                this.checkInitialViewportStatus(img);
+                this.checkViewportStatus(img);
             });
         }, 100);
         
@@ -339,11 +296,11 @@ window.ImageLoader = class ImageLoader {
      */
     setupStandardLoadListeners() {
         document.querySelectorAll('.product-image').forEach(img => {
-            this.checkInitialViewportStatus(img);
+            this.checkViewportStatus(img);
             this.viewportObserver.observe(img);
             
             img.addEventListener('load', () => {
-                const loadTime = getRelativeTime() - this.timingData.startTime;
+                const loadTime = performance.now() - this.timingData.startTime;
                 const index = parseInt(img.dataset.index);
                 
                 this.timingData.imageLoadTimes.push({
@@ -352,6 +309,14 @@ window.ImageLoader = class ImageLoader {
                 });
                 
                 this.monitorPaintTime(img, index, loadTime);
+                
+                // Also notify metrics tracker about image loads
+                if (this.metricsTracker) {
+                    this.metricsTracker.trackElementPaint(img, {
+                        source: 'image-load-event',
+                        loadTime: loadTime
+                    });
+                }
                 
                 if (this.timingData.imageLoadTimes.length === CONFIG.products.length) {
                     setTimeout(() => this.finalizeResults(), 1000);
@@ -371,11 +336,11 @@ window.ImageLoader = class ImageLoader {
         const that = this;
         
         document.querySelectorAll('.product-image').forEach(img => {
-            this.checkInitialViewportStatus(img);
+            this.checkViewportStatus(img);
             that.viewportObserver.observe(img);
             
             const onLowResLoad = function() {
-                const loadTime = getRelativeTime() - that.timingData.startTime;
+                const loadTime = performance.now() - that.timingData.startTime;
                 const index = parseInt(img.dataset.index);
                 
                 that.timingData.imageLoadTimes.push({
@@ -385,7 +350,7 @@ window.ImageLoader = class ImageLoader {
                 });
                 
                 requestAnimationFrame(() => {
-                    const lowResPaintTime = getRelativeTime() - that.timingData.startTime;
+                    const lowResPaintTime = performance.now() - that.timingData.startTime;
                     that.timingData.paintDeltas.push({
                         imageIndex: index,
                         loadTime: loadTime,
@@ -394,6 +359,19 @@ window.ImageLoader = class ImageLoader {
                         method: 'requestAnimationFrame',
                         type: 'low-res'
                     });
+                    
+                    // Notify metrics tracker
+                    if (that.metricsTracker) {
+                        that.metricsTracker.recordPaintEvent({
+                            element: img,
+                            time: performance.now(),
+                            type: 'lqip-low-res',
+                            metadata: {
+                                loadTime: loadTime,
+                                paintTime: lowResPaintTime
+                            }
+                        });
+                    }
                 });
                 
                 img.removeEventListener('load', onLowResLoad);
@@ -402,7 +380,7 @@ window.ImageLoader = class ImageLoader {
                     const highResImage = new Image();
                     
                     highResImage.onload = () => {
-                        const highResLoadTime = getRelativeTime() - that.timingData.startTime;
+                        const highResLoadTime = performance.now() - that.timingData.startTime;
                         
                         img.src = highResImage.src;
                         img.style.filter = 'blur(0)';
@@ -414,6 +392,14 @@ window.ImageLoader = class ImageLoader {
                         });
                         
                         that.monitorPaintTime(img, index, highResLoadTime, 'high-res');
+                        
+                        // Notify metrics tracker
+                        if (that.metricsTracker) {
+                            that.metricsTracker.trackElementPaint(img, {
+                                source: 'lqip-high-res-load',
+                                loadTime: highResLoadTime
+                            });
+                        }
                         
                         const highResLoads = that.timingData.imageLoadTimes.filter(item => item.type === 'high-res');
                         if (highResLoads.length === CONFIG.products.length) {
@@ -443,7 +429,7 @@ window.ImageLoader = class ImageLoader {
         
         const checkPaint = () => {
             if (!paintDetected && (img.offsetWidth !== originalWidth || img.offsetHeight !== originalHeight || img.naturalWidth > 0)) {
-                const paintTime = getRelativeTime() - this.timingData.startTime;
+                const paintTime = performance.now() - this.timingData.startTime;
                 paintDetected = true;
                 
                 if (paintTime - loadTime > 10000) {
@@ -469,7 +455,7 @@ window.ImageLoader = class ImageLoader {
                 return;
             }
             
-            if (!paintDetected && getRelativeTime() - this.timingData.startTime < 10000) {
+            if (!paintDetected && performance.now() - this.timingData.startTime < 10000) {
                 requestAnimationFrame(checkPaint);
             }
         };
@@ -482,17 +468,11 @@ window.ImageLoader = class ImageLoader {
     /**
      * Set up Performance Observer for element timing
      */
-    setupPerformanceObservers() {
+    setupElementTimingObserver() {
         if ('PerformanceObserver' in window) {
             try {
                 const elementObserver = new PerformanceObserver((entryList) => {
                     for (const entry of entryList.getEntries()) {
-                        this.timingData.elementTimings.push({
-                            identifier: entry.identifier,
-                            time: entry.startTime,
-                            renderTime: entry.renderTime || entry.startTime
-                        });
-                        
                         if (entry.identifier && entry.identifier.startsWith('product-image-')) {
                             const imageIndex = parseInt(entry.identifier.split('-').pop()) - 1;
                             
@@ -544,33 +524,6 @@ window.ImageLoader = class ImageLoader {
     }
     
     /**
-     * Clear performance entries
-     */
-    clearPerformanceEntries() {
-        if (performance && typeof performance.clearResourceTimings === 'function') {
-            performance.clearResourceTimings();
-        }
-        
-        if (performance && typeof performance.clearMarks === 'function') {
-            performance.clearMarks();
-        }
-        
-        if (performance && typeof performance.clearMeasures === 'function') {
-            performance.clearMeasures();
-        }
-        
-        if (window.PerformanceObserver) {
-            try {
-                if (window.pageMetricsTracker && window.pageMetricsTracker.observers) {
-                    window.pageMetricsTracker.disconnect();
-                }
-            } catch (e) {
-                console.warn('Error disconnecting observers:', e);
-            }
-        }
-    }
-    
-    /**
      * Load images with the selected options
      */
     loadImages() {
@@ -585,14 +538,17 @@ window.ImageLoader = class ImageLoader {
             }
         });
         
+        // Reset metrics if available
+        if (this.metricsTracker && typeof this.metricsTracker.reset === 'function') {
+            this.metricsTracker.reset();
+        }
+        
         if (window.requestIdleCallback) {
             window.requestIdleCallback(() => {
-                this.clearPerformanceEntries();
                 this.continueLoading(currentSize, currentType);
             });
         } else {
             setTimeout(() => {
-                this.clearPerformanceEntries();
                 this.continueLoading(currentSize, currentType);
             }, 50);
         }
@@ -602,15 +558,9 @@ window.ImageLoader = class ImageLoader {
      * Continue loading after cleanup
      */
     continueLoading(size, type) {
-        if (window.pageMetricsTracker && typeof window.pageMetricsTracker.reset === 'function') {
-            window.pageMetricsTracker.reset();
-        }
-        
         this.timingData = {
-            startTime: getRelativeTime(),
-            navigationStartTime: window.navigationStartTime,
+            startTime: performance.now(),
             imageLoadTimes: [],
-            elementTimings: [],
             paintDeltas: [],
             viewportDeltas: []
         };
@@ -622,6 +572,7 @@ window.ImageLoader = class ImageLoader {
         
         this.initViewportObserver();
         this.setupWindowResizeListener();
+        this.setupElementTimingObserver();
         
         CONFIG.products.forEach((product, index) => {
             const productDiv = this.createProductHTML(product, index, sizeValue, loadType);
@@ -634,11 +585,9 @@ window.ImageLoader = class ImageLoader {
             this.setupLQIPLoadListeners();
         }
         
-        this.setupPerformanceObservers();
-        
         setTimeout(() => {
             document.querySelectorAll('.product-image').forEach(img => {
-                this.checkInitialViewportStatus(img);
+                this.checkViewportStatus(img);
             });
         }, 200);
     }
@@ -665,13 +614,13 @@ window.ImageLoader = class ImageLoader {
         this.timingData.paintDeltas = uniquePaintDeltas;
         
         // Emit results event for UI to handle
-        this.events.emit('resultsReady', {
+        this.emit('resultsReady', {
             imageSize: this.imageSize.value,
             imageType: this.imageType.value,
-            navigationStartTime: this.timingData.navigationStartTime,
+            navigationStartTime: window.navigationStartTime,
             loadTimes: this.timingData.imageLoadTimes,
             paintDeltas: this.timingData.paintDeltas,
             viewportDeltas: this.timingData.viewportDeltas
         });
     }
-}; 
+}
