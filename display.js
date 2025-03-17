@@ -173,7 +173,7 @@ window.DisplayManager = class DisplayManager {
             </table>
         `;
         
-        // Add paint times table
+        // Add paint times table WITH viewport percentage
         if (results.paintDeltas.length > 0) {
             resultsHTML += `
                 <h3>Image Paint Times (When visible on screen)</h3>
@@ -183,6 +183,7 @@ window.DisplayManager = class DisplayManager {
                             <th>Image</th>
                             <th>Resolution</th>
                             <th>Paint Time (ms)</th>
+                            <th>Viewport Visibility %</th>
                             <th>Detection Method</th>
                         </tr>
                     </thead>
@@ -196,46 +197,22 @@ window.DisplayManager = class DisplayManager {
                     return (a.type === 'low-res' ? -1 : 1);
                 })
                 .forEach(item => {
+                    // Find viewport entry for this image to get visibility percentage
+                    const viewportEntry = results.viewportDeltas.find(
+                        entry => entry.imageIndex === item.imageIndex
+                    );
+                    
+                    const visibilityPercent = viewportEntry 
+                        ? Math.round(viewportEntry.intersectionRatio * 100) 
+                        : 0;
+                    
                     resultsHTML += `
                         <tr>
                             <td>Product Image ${item.imageIndex + 1}</td>
                             <td>${item.type || 'standard'}</td>
                             <td>${item.paintTime.toFixed(2)}</td>
+                            <td>${visibilityPercent}%</td>
                             <td>${item.method || 'API'}</td>
-                        </tr>
-                    `;
-                });
-            
-            resultsHTML += `
-                    </tbody>
-                </table>
-            `;
-        }
-        
-        // Add viewport entry times table
-        if (results.viewportDeltas.length > 0) {
-            resultsHTML += `
-                <h3>Viewport Entry Times (When image enters viewport)</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Image</th>
-                            <th>Viewport Entry Time (ms)</th>
-                            <th>Intersection Ratio</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            `;
-            
-            // Sort by image index
-            results.viewportDeltas
-                .sort((a, b) => a.imageIndex - b.imageIndex)
-                .forEach(item => {
-                    resultsHTML += `
-                        <tr>
-                            <td>Product Image ${item.imageIndex + 1}</td>
-                            <td>${item.viewportTime.toFixed(2)}</td>
-                            <td>${(item.intersectionRatio * 100).toFixed(1)}%</td>
                         </tr>
                     `;
                 });
@@ -332,4 +309,4 @@ window.DisplayManager = class DisplayManager {
         // Update the results element
         this.resultsContainer.innerHTML = resultsHTML;
     }
-}; 
+};
